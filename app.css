@@ -239,8 +239,8 @@ tr:last-child td { border-bottom: 0; }
 .record-row:hover, .record-row:focus-visible { background: #f3f9f8; outline: none; }
 .record-row.status-row-done td { background: #eff9f1; }
 .record-row.status-row-done:hover td, .record-row.status-row-done:focus-visible td { background: #e4f4e8; }
-.record-row.status-row-pending td { background: #fff9e8; }
-.record-row.status-row-pending:hover td, .record-row.status-row-pending:focus-visible td { background: #fff3ce; }
+.record-row.status-row-pending td { background: #fffdf5; }
+.record-row.status-row-pending:hover td, .record-row.status-row-pending:focus-visible td { background: #fff9e8; }
 .record-row.status-row-not-online td { background: #fff; }
 .record-row.status-row-not-online:hover td, .record-row.status-row-not-online:focus-visible td { background: #f4f7f8; }
 .icon-action { width: 32px; min-width: 32px; height: 32px; padding: 6px; }

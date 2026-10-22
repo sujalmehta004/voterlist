@@ -16,7 +16,7 @@ const state = {
   activeBatchResponseKey: '',
   registrationAnalyticsPeriod: '',
   selectedStatusFilter: 'NOT DONE',
-  visibleRecordColumns: ['name', 'nin', 'mobile', 'status', 'number', 'registered', 'updated', 'actions'],
+  visibleRecordColumns: ['name', 'dob', 'nin', 'mobile', 'status', 'number', 'registered', 'registered-days', 'updated', 'updated-days', 'notes', 'actions'],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -26,12 +26,16 @@ const WORKSPACE_SETTINGS_KEY = 'voterlist-workspace-settings-v1';
 const ALL_BATCH_GROUP_KEY = 'all-records';
 const RECORD_COLUMNS = [
   { id: 'name', label: 'Name' },
+  { id: 'dob', label: 'Date of birth' },
   { id: 'nin', label: 'NIN' },
   { id: 'mobile', label: 'Mobile' },
   { id: 'status', label: 'Status' },
   { id: 'number', label: 'Voter-list / Abedan number' },
   { id: 'registered', label: 'Registered' },
+  { id: 'registered-days', label: 'Registered days' },
   { id: 'updated', label: 'Updated' },
+  { id: 'updated-days', label: 'Updated days' },
+  { id: 'notes', label: 'Notes' },
   { id: 'actions', label: 'Actions' },
 ];
 
@@ -987,13 +991,17 @@ function renderRecords() {
   recordsBody.innerHTML = filteredRecords.length
     ? filteredRecords.map((record) => `
       <tr class="record-row status-row-${recordStatus(record).toLowerCase().replace(/\s+/g, '-')}" data-record-row="${escapeHtml(record._id)}" tabindex="0" aria-label="View ${escapeHtml(record.fullName)} details">
-        <td data-record-column="name"><strong>${escapeHtml(record.fullName)}</strong><span class="subline">${escapeHtml(record.dobAd)} AD · ${escapeHtml(record.dobBs)} BS</span></td>
+        <td data-record-column="name"><strong>${escapeHtml(record.fullName)}</strong></td>
+        <td data-record-column="dob">${escapeHtml(record.dobAd)}</td>
         <td data-record-column="nin">${escapeHtml(record.nin)}</td>
         <td data-record-column="mobile">${escapeHtml(record.mobile)}</td>
         <td data-record-column="status">${statusPill(recordStatus(record))}</td>
         <td data-record-column="number">${escapeHtml(recordNumber(record).value)}</td>
-        <td data-record-column="registered">${escapeHtml(formatBsDate(record.createdAt))} BS <span class="subline">${escapeHtml(daysSince(record.createdAt))}</span></td>
-        <td data-record-column="updated">${escapeHtml(formatBsDate(record.updatedAt))} BS <span class="subline">${escapeHtml(daysSince(record.updatedAt))}</span></td>
+        <td data-record-column="registered">${escapeHtml(formatBsDate(record.createdAt))}</td>
+        <td data-record-column="registered-days">${escapeHtml(daysSince(record.createdAt))}</td>
+        <td data-record-column="updated">${escapeHtml(formatBsDate(record.updatedAt))}</td>
+        <td data-record-column="updated-days">${escapeHtml(daysSince(record.updatedAt))}</td>
+        <td data-record-column="notes">${escapeHtml(record.notes || '—')}</td>
         <td class="row-actions" data-record-column="actions">
           <button class="button primary tiny check-record-action" type="button" data-check="${escapeHtml(record._id)}" aria-label="Check status for ${escapeHtml(record.fullName)}" title="Check status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg><span>Check</span></button>
           <button class="button subtle tiny print-record-action" type="button" data-print="${escapeHtml(record._id)}" aria-label="Print A4 sheet for ${escapeHtml(record.fullName)}" title="Print A4"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/><path d="M17 11h.01"/></svg><span>Print</span></button>
