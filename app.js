@@ -258,7 +258,12 @@ function formatBsDate(value) {
     console.error('The Nepali date converter is unavailable for record dates.');
     return '—';
   }
-  return new NepaliDateClass(date).format('YYYY-MM-DD');
+  try {
+    return new NepaliDateClass(date).format('YYYY-MM-DD');
+  } catch (error) {
+    console.error('Could not convert a saved record date to BS:', error);
+    return '—';
+  }
 }
 
 function daysSince(value) {
@@ -423,8 +428,9 @@ function loadCachedRecords() {
       localStorage.removeItem(RECORDS_CACHE_KEY);
       return false;
     }
-    state.records = records;
+    state.records = normalizeLegacyRegisteredDates(records);
     state.recordsLoaded = true;
+    cacheRecords();
     renderRecords();
     return true;
   } catch (error) {
@@ -490,6 +496,34 @@ function convertDateValue(value, source) {
   if (nepaliDate.format('YYYY-MM-DD') !== value) return '';
   const adDate = nepaliDate.getAD();
   return `${adDate.year}-${String(adDate.month + 1).padStart(2, '0')}-${String(adDate.date).padStart(2, '0')}`;
+}
+
+function normalizeLegacyRegisteredDates(records) {
+  const currentYear = new Date().getFullYear();
+  return records.map((record) => {
+    const createdAt = new Date(record.createdAt);
+    const bsYear = createdAt.getUTCFullYear();
+    if (Number.isNaN(createdAt.getTime()) || bsYear <= currentYear + 1 || bsYear > 2090 || bsYear < 2000) {
+      return record;
+    }
+
+    const bsDate = [
+      bsYear,
+      String(createdAt.getUTCMonth() + 1).padStart(2, '0'),
+      String(createdAt.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+    try {
+      const adDate = convertDateValue(bsDate, 'bs');
+      if (!adDate) return record;
+      const [year, month, day] = adDate.split('-').map(Number);
+      const correctedDate = new Date(Date.UTC(year, month - 1, day, 12));
+      console.warn(`Recovered a legacy BS registration date for record ${record._id}.`);
+      return { ...record, createdAt: correctedDate.toISOString() };
+    } catch (error) {
+      console.error(`Could not recover the legacy registration date for record ${record._id}:`, error);
+      return record;
+    }
+  });
 }
 
 function isValidBsDate(value) {
@@ -1015,10 +1049,10 @@ async function loadRecords({ force = false } = {}) {
   try {
     const { records } = await apiRequest('/api/records', { cache: 'no-store' });
     const cachedResponses = new Map(state.records.map((record) => [record._id, record.uniqueSearchResponses || []]));
-    state.records = (Array.isArray(records) ? records : []).map((record) => ({
+    state.records = normalizeLegacyRegisteredDates((Array.isArray(records) ? records : []).map((record) => ({
       ...record,
       uniqueSearchResponses: cachedResponses.get(record._id) || [],
-    }));
+    })));
     state.recordsLoaded = true;
     const cached = cacheRecords();
     renderRecords();
@@ -1074,8 +1108,17 @@ async function handleCreateRecord(event, entryType = 'standard') {
     showToast('Enter a valid AD or BS date as YYYY-MM-DD. The other date is converted automatically.', true);
     return;
   }
-  if (entryType === 'old' && !validIsoDate(form.elements.registeredDate.value)) {
-    showToast('Enter a valid registered date.', true);
+  if (entryType === 'old' && !isValidBsDate(form.elements.registeredDate.value)) {
+    showToast('Enter a valid registered date in BS as YYYY-MM-DD.', true);
+    return;
+  }
+  const enteredNin = form.elements.nin.value.replace(/\D/g, '');
+  const duplicateNin = state.records.find((record) => (
+    record._id !== state.editingRecordId
+      && String(record.nin || '').replace(/\D/g, '') === enteredNin
+  ));
+  if (duplicateNin) {
+    showToast('This NID / NIN number is already registered.', true);
     return;
   }
   button.disabled = true;
@@ -1084,7 +1127,12 @@ async function handleCreateRecord(event, entryType = 'standard') {
     const payload = {
       ...Object.fromEntries(formData.entries()),
       status: form.elements.status.value,
-      ...(entryType === 'old' ? { entryType: 'old' } : {}),
+      ...(entryType === 'old'
+        ? {
+          entryType: 'old',
+          registeredDate: convertDateValue(form.elements.registeredDate.value, 'bs'),
+        }
+        : {}),
     };
     const result = await apiRequest('/api/records', {
       method: isEditing ? 'PUT' : 'POST',
@@ -1253,6 +1301,7 @@ async function runRecordStatusCheck(record, button) {
     showStatusResult(result.record, result.response);
     const updatedRecord = {
       ...result.record,
+      createdAt: record.createdAt,
       statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1,
       uniqueSearchResponses: cacheableSearchResponses(result.responses || []),
     };
@@ -1505,6 +1554,7 @@ async function runBatchChecks(records) {
       }, () => state.stopBatchRequested);
       const updatedRecord = {
         ...result.record,
+        createdAt: record.createdAt,
         statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1,
         uniqueSearchResponses: cacheableSearchResponses(result.responses || []),
       };
@@ -1748,7 +1798,18 @@ function wireRecordEntryForm(form, entryType) {
     });
   }
   form.elements.fullName.addEventListener('input', (event) => {
-    event.currentTarget.value = event.currentTarget.value.replace(/[^\p{L}\p{M}. ]/gu, '');
+    const input = event.currentTarget;
+    const caret = input.selectionStart;
+    const rawValue = input.value;
+    const value = rawValue.replace(/[^\p{L}\p{M}. ]/gu, '').toUpperCase();
+    const normalizedPrefix = caret === null
+      ? ''
+      : rawValue.slice(0, caret).replace(/[^\p{L}\p{M}. ]/gu, '').toUpperCase();
+    input.value = value;
+    if (caret !== null) {
+      const position = Math.min(normalizedPrefix.length, value.length);
+      input.setSelectionRange(position, position);
+    }
   });
   form.elements.dobAd.addEventListener('input', (event) => {
     formatIsoDateInput(event.currentTarget);

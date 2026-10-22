@@ -8,6 +8,7 @@ const { hasValidSession } = require('../lib/auth');
 const { readJsonBody, sendJson } = require('../lib/http');
 const {
   normalizeNin,
+  normalizeFullName,
   isValidFullName,
   isValidIsoDate,
 } = require('../lib/records');
@@ -52,7 +53,7 @@ module.exports = async function records(req, res) {
 
     const body = await readJsonBody(req);
     const nin = normalizeNin(body.nin);
-    const fullName = String(body.fullName || '').trim().replace(/\s+/g, ' ');
+    const fullName = normalizeFullName(body.fullName);
     const dobAd = String(body.dobAd || '').trim();
     const dobBs = String(body.dobBs || '').trim();
     const mobile = String(body.mobile || '').trim();
@@ -86,15 +87,24 @@ module.exports = async function records(req, res) {
       return sendJson(res, 400, { error: 'Choose a valid record status.' });
     }
 
+    let recordId = '';
     if (req.method === 'PUT') {
       if (String(body.confirmText || '') !== 'UPDATE') {
         return sendJson(res, 400, { error: 'Type UPDATE exactly to confirm this change.' });
       }
-      const recordId = String(body.recordId || '').trim();
+      recordId = String(body.recordId || '').trim();
       if (!mongoose.isValidObjectId(recordId)) {
         return sendJson(res, 400, { error: 'Select a valid record to update.' });
       }
+    }
 
+    const duplicateQuery = { nin };
+    if (recordId) duplicateQuery._id = { $ne: recordId };
+    if (await VoterlistData.exists(duplicateQuery)) {
+      return sendJson(res, 409, { error: 'This NID / NIN number is already registered.' });
+    }
+
+    if (req.method === 'PUT') {
       const record = await VoterlistData.findById(recordId);
       if (!record) return sendJson(res, 404, { error: 'The voterlist record no longer exists.' });
       const values = { nin, dobAd, dobBs, fullName, mobile, notes, status };
@@ -149,7 +159,16 @@ module.exports = async function records(req, res) {
     }
     return sendJson(res, 201, { record });
   } catch (error) {
-    if (error.code === 11000) return sendJson(res, 409, { error: 'A record for this NIN already exists.' });
+    if (error.code === 11000) {
+      if (error.keyPattern?.nin || error.keyValue?.nin) {
+        return sendJson(res, 409, { error: 'This NID / NIN number is already registered.' });
+      }
+      if (error.keyPattern?.qrToken || error.keyValue?.qrToken) {
+        console.error('Voterlist record save generated a duplicate QR token.');
+        return sendJson(res, 500, { error: 'Could not create a unique verification link. Please try again.' });
+      }
+      return sendJson(res, 409, { error: 'A record with one of these unique values already exists.' });
+    }
     if (error instanceof mongoose.Error.ValidationError || error instanceof mongoose.Error.CastError) {
       return sendJson(res, 400, { error: 'The record details are invalid.' });
     }

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   normalizeNin,
+  normalizeFullName,
   isValidFullName,
   isValidIsoDate,
   firstNameFromFullName,
@@ -22,6 +23,11 @@ test('normalizes a 10-digit NIN', () => {
   assert.equal(normalizeNin('615-385-908-6'), '615-385-908-6');
   assert.equal(normalizeNin('6153859086'), '615-385-908-6');
   assert.equal(normalizeNin('12345'), '');
+});
+
+test('normalizes full names to uppercase and collapses whitespace', () => {
+  assert.equal(normalizeFullName('  sujal   mehta '), 'SUJAL MEHTA');
+  assert.equal(normalizeFullName('राम बहादुर'), 'राम बहादुर');
 });
 
 test('accepts names with letters, spaces, periods, and Nepali diacritics only', () => {
