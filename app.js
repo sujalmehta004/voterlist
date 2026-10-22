@@ -1,15 +1,20 @@
 const state = {
   records: [],
   currentTab: 'entry',
+  workspaceSettings: { hideEntryTab: false, hideDatabaseTab: false },
   checkingAll: false,
   stopBatchRequested: false,
   batchRunPromise: null,
+  statusCheckPromise: null,
+  activeStatusCheckId: '',
+  stopStatusCheckRequested: false,
   refreshingRecords: false,
   savedRecord: null,
   recordsLoaded: false,
   editingRecordId: null,
   batchResults: [],
   activeBatchResponseKey: '',
+  registrationAnalyticsPeriod: '',
   selectedStatusFilter: 'NOT DONE',
   visibleRecordColumns: ['name', 'nin', 'mobile', 'status', 'number', 'registered', 'updated', 'actions'],
 };
@@ -17,6 +22,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const RECORDS_CACHE_KEY = 'voterlist-records-cache-v1';
 const RECORD_COLUMNS_KEY = 'voterlist-visible-record-columns-v1';
+const WORKSPACE_SETTINGS_KEY = 'voterlist-workspace-settings-v1';
 const ALL_BATCH_GROUP_KEY = 'all-records';
 const RECORD_COLUMNS = [
   { id: 'name', label: 'Name' },
@@ -55,8 +61,125 @@ async function handlePasswordChange(event) {
       }),
     });
     $('passwordForm').reset();
-    $('settingsDialog').close();
+    $('passwordDialog').close();
     showToast('Admin password updated in the database.');
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function isValidWorkspaceSettings(settings) {
+  return settings
+    && typeof settings.hideEntryTab === 'boolean'
+    && typeof settings.hideDatabaseTab === 'boolean'
+    && !(settings.hideEntryTab && settings.hideDatabaseTab);
+}
+
+function applyWorkspaceSettings() {
+  $('hideEntryTab').checked = state.workspaceSettings.hideEntryTab;
+  $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
+  document.querySelector('.tab[data-tab="entry"]').hidden = state.workspaceSettings.hideEntryTab;
+  document.querySelector('.tab[data-tab="records"]').hidden = state.workspaceSettings.hideDatabaseTab;
+  setTab(state.currentTab);
+}
+
+function loadCachedWorkspaceSettings() {
+  try {
+    const cached = localStorage.getItem(WORKSPACE_SETTINGS_KEY);
+    if (!cached) return;
+    const settings = JSON.parse(cached);
+    if (!isValidWorkspaceSettings(settings)) {
+      localStorage.removeItem(WORKSPACE_SETTINGS_KEY);
+      return;
+    }
+    state.workspaceSettings = settings;
+    applyWorkspaceSettings();
+  } catch (error) {
+    console.error('Could not read saved workspace settings:', error);
+    showToast('Saved workspace settings could not be read; using the default tabs.', true);
+  }
+}
+
+async function syncWorkspaceSettings() {
+  try {
+    const { settings } = await apiRequest('/api/workspace-settings', { cache: 'no-store' });
+    if (!isValidWorkspaceSettings(settings)) {
+      throw new Error('The saved workspace tab settings are invalid.');
+    }
+    state.workspaceSettings = settings;
+    applyWorkspaceSettings();
+    try {
+      localStorage.setItem(WORKSPACE_SETTINGS_KEY, JSON.stringify(settings));
+    } catch (error) {
+      console.error('Could not cache workspace settings locally:', error);
+      showToast('Workspace settings synced from the database, but could not be cached in this browser.', true);
+    }
+    return true;
+  } catch (error) {
+    applyWorkspaceSettings();
+    showToast(`Could not sync workspace settings from the database: ${error.message}`, true);
+    return false;
+  }
+}
+
+async function saveWorkspaceSettings(event) {
+  event.preventDefault();
+  const button = $('saveWorkspaceSettingsButton');
+  const message = $('workspaceSettingsMessage');
+  const settings = {
+    hideEntryTab: $('hideEntryTab').checked,
+    hideDatabaseTab: $('hideDatabaseTab').checked,
+  };
+  message.textContent = '';
+  if (settings.hideEntryTab && settings.hideDatabaseTab) {
+    message.textContent = 'At least one workspace tab must remain visible.';
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    const result = await apiRequest('/api/workspace-settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+    if (!isValidWorkspaceSettings(result.settings)) {
+      throw new Error('The server returned invalid workspace settings.');
+    }
+    state.workspaceSettings = result.settings;
+    applyWorkspaceSettings();
+    let cacheWarning = '';
+    try {
+      localStorage.setItem(WORKSPACE_SETTINGS_KEY, JSON.stringify(result.settings));
+    } catch (error) {
+      console.error('Could not cache updated workspace settings:', error);
+      cacheWarning = ' Database settings were saved, but this browser could not cache them.';
+    }
+    message.textContent = '';
+    showToast(`Workspace tab settings saved.${cacheWarning}`, Boolean(cacheWarning));
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function verifyWorkspaceAdminPassword(event) {
+  event.preventDefault();
+  const button = $('confirmWorkspacePasswordButton');
+  const message = $('workspacePasswordMessage');
+  message.textContent = '';
+  button.disabled = true;
+  try {
+    await apiRequest('/api/workspace-settings', {
+      method: 'POST',
+      body: JSON.stringify({ password: $('workspaceAdminPassword').value }),
+    });
+    $('workspacePasswordDialog').close();
+    $('hideEntryTab').checked = state.workspaceSettings.hideEntryTab;
+    $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
+    $('workspaceSettingsDialog').showModal();
   } catch (error) {
     message.textContent = error.message;
   } finally {
@@ -74,6 +197,11 @@ async function softRefresh() {
       showToast('Stopping status checks before syncing records…');
       await state.batchRunPromise;
     }
+    if (state.statusCheckPromise) {
+      state.stopStatusCheckRequested = true;
+      showToast('Stopping the individual status check before syncing records…');
+      await state.statusCheckPromise;
+    }
     resetRecordForm();
     $('recordsSearch').value = '';
     $('datePeriodFilter').value = 'ALL';
@@ -81,14 +209,19 @@ async function softRefresh() {
     state.selectedStatusFilter = 'NOT DONE';
     $('checkAllDialog').close();
     $('settingsDialog').close();
+    $('passwordDialog').close();
+    $('workspacePasswordDialog').close();
+    $('workspaceSettingsDialog').close();
     $('savedRecordDialog').close();
     $('recordDetailsDialog').close();
+    $('statusCheckResponseDialog').close();
     const loaded = await loadRecords({ force: true });
     if (loaded) {
       showToast('Records synced. Forms, searches, and filters have been cleared.');
     }
   } finally {
     state.stopBatchRequested = false;
+    state.stopStatusCheckRequested = false;
     state.refreshingRecords = false;
   }
 }
@@ -175,6 +308,7 @@ async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const error = new Error(data.error || `Request failed (${response.status}).`);
     error.status = response.status;
+    error.response = data;
     throw error;
   }
   return data;
@@ -283,6 +417,28 @@ function loadCachedRecords() {
   }
 }
 
+function mergeUniqueSearchResponses(...responseLists) {
+  const responses = new Map();
+  for (const response of responseLists.flat()) {
+    if (!response?.fullResponse) continue;
+    const message = batchResponseMessage(response.fullResponse) || 'No response message returned.';
+    if (!responses.has(message)) responses.set(message, response);
+  }
+  return [...responses.values()].sort((left, right) => (
+    new Date(left.changedAt || 0).getTime() - new Date(right.changedAt || 0).getTime()
+  ));
+}
+
+function cacheableSearchResponses(responses) {
+  return mergeUniqueSearchResponses(responses).map((response) => ({
+    changedAt: response.changedAt,
+    responseHash: response.responseHash,
+    fullResponse: {
+      body: { message: batchResponseMessage(response.fullResponse) || 'No response message returned.' },
+    },
+  }));
+}
+
 function getNepaliDateClass() {
   if (window.NepaliDate?.default && typeof window.NepaliDate.default === 'function') {
     return window.NepaliDate.default;
@@ -365,6 +521,10 @@ function formatIsoDateInput(input) {
 }
 
 function setTab(tabName) {
+  const requestedButton = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  if (!requestedButton || requestedButton.hidden) {
+    tabName = state.workspaceSettings.hideEntryTab ? 'records' : 'entry';
+  }
   state.currentTab = tabName;
   document.querySelectorAll('.tab').forEach((button) => {
     button.classList.toggle('active', button.dataset.tab === tabName);
@@ -454,44 +614,114 @@ function countRegistrationsForYear(records, year) {
   return records.filter((record) => registrationDateParts(record.createdAt)?.year === year).length;
 }
 
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function registrationAnalyticsPeriods(now) {
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6 + index);
+    return {
+      key: `day:${localDateKey(date)}`,
+      type: 'day',
+      year: date.getFullYear(),
+      month: date.getMonth(),
+      day: date.getDate(),
+      label: date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+    };
+  });
+  const months = Array.from({ length: 4 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - 3 + index, 1);
+    return {
+      key: `month:${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+      type: 'month',
+      year: date.getFullYear(),
+      month: date.getMonth(),
+      label: date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+    };
+  });
+  const years = [now.getFullYear() - 1, now.getFullYear()].map((year) => ({
+    key: `year:${year}`,
+    type: 'year',
+    year,
+    label: String(year),
+  }));
+  return [
+    { key: 'days', title: 'Last 7 days, including today', periods: days },
+    { key: 'months', title: 'Current and previous 3 months', periods: months },
+    { key: 'years', title: 'Current and previous year', periods: years },
+  ];
+}
+
+function recordMatchesRegistrationPeriod(record, period) {
+  const parts = registrationDateParts(record.createdAt);
+  if (!parts || parts.year !== period.year) return false;
+  if (period.type === 'year') return true;
+  if (parts.month !== period.month) return false;
+  return period.type === 'month' || parts.day === period.day;
+}
+
 function renderRegistrationAnalytics() {
   const now = new Date();
-  const sevenDayCounts = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index));
-    return {
-      label: date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
-      count: countRegistrationsForDate(state.records, date.getFullYear(), date.getMonth(), date.getDate()),
-    };
-  });
-  const monthCounts = Array.from({ length: 4 }, (_, index) => {
-    const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
-    return {
-      label: date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
-      count: countRegistrationsForMonth(state.records, date.getFullYear(), date.getMonth()),
-    };
-  });
-  const yearCounts = [now.getFullYear(), now.getFullYear() - 1].map((year) => ({
-    label: String(year),
-    count: countRegistrationsForYear(state.records, year),
-  }));
-  const renderRows = (rows) => rows.map(({ label, count }) => `
-    <div class="registration-analytics-row"><span>${escapeHtml(label)}</span><strong>${count}</strong></div>
-  `).join('');
-
+  const periodGroups = registrationAnalyticsPeriods(now);
+  const allPeriods = periodGroups.flatMap((group) => group.periods);
+  if (!allPeriods.some((period) => period.key === state.registrationAnalyticsPeriod)) {
+    state.registrationAnalyticsPeriod = `day:${localDateKey(now)}`;
+  }
+  const selectedPeriod = allPeriods.find((period) => period.key === state.registrationAnalyticsPeriod);
+  const matchingRecords = state.records
+    .filter((record) => recordMatchesRegistrationPeriod(record, selectedPeriod))
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
   $('registrationAnalyticsContent').innerHTML = `
-    <section class="registration-analytics-section">
-      <h3>Previous 7 days (including today)</h3>
-      <div class="registration-analytics-list">${renderRows(sevenDayCounts)}</div>
-    </section>
-    <section class="registration-analytics-section">
-      <h3>This month and previous 3 months</h3>
-      <div class="registration-analytics-list">${renderRows(monthCounts)}</div>
-    </section>
-    <section class="registration-analytics-section">
-      <h3>This year and previous year</h3>
-      <div class="registration-analytics-list">${renderRows(yearCounts)}</div>
+    <div class="registration-analytics-periods">
+      ${periodGroups.map((group) => `
+        <section class="registration-analytics-section">
+          <h3>${escapeHtml(group.title)}</h3>
+          <div class="registration-analytics-list">
+            ${group.periods.map((period) => {
+              const count = period.type === 'day'
+                ? countRegistrationsForDate(state.records, period.year, period.month, period.day)
+                : period.type === 'month'
+                  ? countRegistrationsForMonth(state.records, period.year, period.month)
+                  : countRegistrationsForYear(state.records, period.year);
+              return `<button class="registration-analytics-row${period.key === selectedPeriod.key ? ' active' : ''}" type="button" data-registration-period="${escapeHtml(period.key)}" aria-pressed="${period.key === selectedPeriod.key}">
+                <span>${escapeHtml(period.label)}</span><span>${count}</span>
+              </button>`;
+            }).join('')}
+          </div>
+        </section>
+      `).join('')}
+    </div>
+    <section class="registration-analytics-records">
+      <div class="registration-analytics-records-heading">
+        <h3>${escapeHtml(selectedPeriod.label)}</h3>
+        <span>${matchingRecords.length} ${matchingRecords.length === 1 ? 'record' : 'records'}</span>
+      </div>
+      ${matchingRecords.length ? `
+        <div class="registration-analytics-record-grid">
+          ${matchingRecords.map((record) => `<button class="registration-analytics-record" type="button" data-registration-record="${escapeHtml(record._id)}">
+            <strong>${escapeHtml(record.fullName)}</strong>
+            <span>${escapeHtml(record.nin)}</span>
+            <small>${escapeHtml(new Date(record.createdAt).toLocaleDateString())}</small>
+          </button>`).join('')}
+        </div>
+      ` : '<p class="registration-analytics-empty">No registrations for this period.</p>'}
     </section>
   `;
+  $('registrationAnalyticsContent').querySelectorAll('[data-registration-period]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.registrationAnalyticsPeriod = button.dataset.registrationPeriod;
+      renderRegistrationAnalytics();
+    });
+  });
+  $('registrationAnalyticsContent').querySelectorAll('[data-registration-record]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const record = state.records.find((item) => item._id === button.dataset.registrationRecord);
+      if (!record) return;
+      $('registrationAnalyticsDialog').close();
+      openRecordDetails(record);
+    });
+  });
 }
 
 function visibleRecords() {
@@ -522,7 +752,7 @@ function visiblePendingRecords() {
   return state.records.filter((record) => recordStatus(record) !== 'DONE');
 }
 
-function openRecordDetails(record) {
+function renderRecordDetails(record) {
   const number = recordNumber(record);
   const registered = `${formatBsDate(record.createdAt)} BS · ${daysSince(record.createdAt)}`;
   const updated = `${formatBsDate(record.updatedAt)} BS · ${daysSince(record.updatedAt)}`;
@@ -542,24 +772,59 @@ function openRecordDetails(record) {
     </div>`;
   $('recordDetailsDialog').dataset.recordId = record._id;
   $('recordUpdatesDialog').dataset.recordId = record._id;
-  $('recordResponsesContent').innerHTML = '<p class="muted small-text">Loading responses…</p>';
+}
+
+function renderLatestCheckResponse(response, label = 'Voterlist status check response') {
+  const message = batchResponseMessage(response) || 'No response message returned.';
+  $('latestCheckResponseContent').innerHTML = `
+    <p class="latest-check-response-label">${escapeHtml(label)}</p>
+    <p class="latest-check-response-message">${escapeHtml(message)}</p>`;
+}
+
+function openStatusCheckResponseDialog(record) {
+  const dialog = $('statusCheckResponseDialog');
+  dialog.dataset.recordId = record._id;
+  dialog.dataset.checking = 'true';
+  $('statusCheckResponseTitle').textContent = record.fullName || 'Check response';
+  $('statusCheckRecordSummary').textContent = `NIN: ${record.nin} · Date of birth: ${record.dobAd}`;
+  $('retryStatusCheckButton').hidden = true;
+  $('retryStatusCheckButton').disabled = false;
+  renderLatestCheckResponse({ message: 'Checking status…' }, 'Status check in progress');
+  if (!dialog.open) dialog.showModal();
+}
+
+function openRecordDetails(record) {
+  renderRecordDetails(record);
+  $('recordResponsesContent').innerHTML = record.uniqueSearchResponses?.length
+    ? renderUniqueResponses(record.uniqueSearchResponses)
+    : '<p class="muted small-text">Loading responses…</p>';
   $('recordDetailsDialog').showModal();
   void loadRecordResponses(record._id);
 }
 
-function renderUniqueResponses(history) {
+function renderUniqueResponses(history = []) {
   const responses = new Map();
-  for (const entry of history) {
-    if (entry.action !== 'STATUS_CHECK' || entry.fullResponse === null || entry.fullResponse === undefined) continue;
-    const message = batchResponseMessage(entry.fullResponse) || 'No response message returned.';
-    if (!responses.has(message)) responses.set(message, entry);
+  const orderedHistory = [...history].sort((left, right) => (
+    new Date(left.changedAt || 0).getTime() - new Date(right.changedAt || 0).getTime()
+  ));
+  for (const entry of orderedHistory) {
+    const fullResponse = entry.fullResponse;
+    if (entry.action && entry.action !== 'STATUS_CHECK') continue;
+    if (fullResponse === null || fullResponse === undefined) continue;
+    const message = batchResponseMessage(fullResponse) || 'No response message returned.';
+    if (!responses.has(message)) {
+      responses.set(message, {
+        changedAt: entry.changedAt,
+        fullResponse,
+      });
+    }
   }
   if (!responses.size) {
     return '<p class="muted small-text">No search response messages have been recorded for this record yet.</p>';
   }
   return [...responses.entries()].map(([message, entry], index) => `
     <div class="response-item">
-      <span class="response-index">Response ${index + 1} · ${escapeHtml(formatDate(entry.changedAt))}</span>
+      <span class="response-index">Response ${index + 1}${entry.changedAt ? ` · ${escapeHtml(formatDate(entry.changedAt))}` : ''}</span>
       <p class="response-message">${escapeHtml(message)}</p>
     </div>
   `).join('');
@@ -569,7 +834,12 @@ async function loadRecordResponses(recordId) {
   try {
     const { responses } = await apiRequest(`/api/record-history?recordId=${encodeURIComponent(recordId)}`, { cache: 'no-store' });
     if ($('recordDetailsDialog').dataset.recordId !== recordId) return;
-    $('recordResponsesContent').innerHTML = renderUniqueResponses(responses);
+    const uniqueSearchResponses = mergeUniqueSearchResponses(responses);
+    $('recordResponsesContent').innerHTML = renderUniqueResponses(uniqueSearchResponses);
+    state.records = state.records.map((record) => record._id === recordId
+      ? { ...record, uniqueSearchResponses: cacheableSearchResponses(uniqueSearchResponses) }
+      : record);
+    cacheRecordsOrNotify();
   } catch (error) {
     if ($('recordDetailsDialog').dataset.recordId !== recordId) return;
     const errorContent = `<p class="message">${escapeHtml(error.message)}</p>`;
@@ -694,15 +964,6 @@ function renderRecords() {
       <span class="status-count-label">Registered today</span>
       <strong>${registeredTodayCount}</strong>
     </button>`;
-  const activeFilterLabel = $('recordsSearch').value.trim()
-    ? 'search results across all statuses'
-    : state.selectedStatusFilter === 'ALL'
-      ? 'all records'
-      : state.selectedStatusFilter === 'NOT DONE'
-        ? 'not-done records'
-        : `${state.selectedStatusFilter.toLocaleLowerCase()} records`;
-  $('recordsCountSummary').textContent = `Showing ${filteredRecords.length} of ${state.records.length} records · ${activeFilterLabel}`;
-
   recordsBody.innerHTML = filteredRecords.length
     ? filteredRecords.map((record) => `
       <tr class="record-row status-row-${recordStatus(record).toLowerCase().replace(/\s+/g, '-')}" data-record-row="${escapeHtml(record._id)}" tabindex="0" aria-label="View ${escapeHtml(record.fullName)} details">
@@ -729,6 +990,7 @@ function renderRecords() {
     });
   });
   $('statusCounts').querySelector('[data-registration-analytics]')?.addEventListener('click', () => {
+    state.registrationAnalyticsPeriod = `day:${localDateKey(new Date())}`;
     renderRegistrationAnalytics();
     $('registrationAnalyticsDialog').showModal();
   });
@@ -766,7 +1028,11 @@ async function loadRecords({ force = false } = {}) {
   if (!force && state.recordsLoaded) return true;
   try {
     const { records } = await apiRequest('/api/records', { cache: 'no-store' });
-    state.records = Array.isArray(records) ? records : [];
+    const cachedResponses = new Map(state.records.map((record) => [record._id, record.uniqueSearchResponses || []]));
+    state.records = (Array.isArray(records) ? records : []).map((record) => ({
+      ...record,
+      uniqueSearchResponses: cachedResponses.get(record._id) || [],
+    }));
     state.recordsLoaded = true;
     const cached = cacheRecords();
     renderRecords();
@@ -795,6 +1061,7 @@ async function handleLogin(event) {
     });
     $('loginPassword').value = '';
     setScreen('appScreen');
+    await syncWorkspaceSettings();
     if (!loadCachedRecords()) await loadRecords({ force: true });
   } catch (error) {
     message.textContent = error.message;
@@ -837,7 +1104,9 @@ async function handleCreateRecord(event) {
       return;
     }
     if (isEditing) {
-      state.records = state.records.map((record) => record._id === result.record._id ? result.record : record);
+      state.records = state.records.map((record) => record._id === result.record._id
+        ? { ...result.record, uniqueSearchResponses: record.uniqueSearchResponses || [] }
+        : record);
       resetRecordForm();
     } else {
       form.reset();
@@ -880,28 +1149,52 @@ function isRetryableStatusCheckError(error) {
 }
 
 function isVoterServerUnavailableResponse(result) {
-  return result.retryable === true;
+  return result.retryable === true
+    || /NI[DN] सर्भरबाट डेटा प्राप्त हुन सकेन/i.test(batchResponseMessage(result.response));
 }
 
 async function checkStatusWithRetries(details, onRetry = () => {}, shouldStop = () => false) {
+  let lastResult;
+  let lastRetryReason = 'request failed';
   for (let attempt = 0; attempt <= AUTOMATIC_STATUS_RETRIES; attempt += 1) {
-    let lastResult;
     try {
       const result = await checkStatus(details);
       lastResult = result;
-      if (!isVoterServerUnavailableResponse(result) || attempt === AUTOMATIC_STATUS_RETRIES || shouldStop()) {
-        return result;
+      const hasResponseMessage = Boolean(batchResponseMessage(result.response));
+      const unavailableResponse = isVoterServerUnavailableResponse(result);
+      if (shouldStop()) {
+        return { ...result, cancelled: true, noResponse: !hasResponseMessage || unavailableResponse };
       }
+      const shouldRetry = unavailableResponse || !hasResponseMessage;
+      if (!shouldRetry || attempt === AUTOMATIC_STATUS_RETRIES) {
+        return { ...result, noResponse: !hasResponseMessage || unavailableResponse };
+      }
+      lastRetryReason = 'no response';
     } catch (error) {
-      if (!isRetryableStatusCheckError(error) || attempt === AUTOMATIC_STATUS_RETRIES || shouldStop()) {
+      if (shouldStop()) {
+        const stoppedError = new Error('Status check stopped for refresh.');
+        stoppedError.code = 'STATUS_CHECK_STOPPED';
+        throw stoppedError;
+      }
+      if (!isRetryableStatusCheckError(error) || attempt === AUTOMATIC_STATUS_RETRIES) {
         throw error;
       }
+      lastRetryReason = 'request failed';
     }
 
     const retryNumber = attempt + 1;
-    onRetry(retryNumber);
+    onRetry(retryNumber, lastRetryReason);
     await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * retryNumber));
-    if (shouldStop()) return lastResult;
+    if (shouldStop()) {
+      if (lastResult) {
+        const noResponse = !batchResponseMessage(lastResult.response)
+          || isVoterServerUnavailableResponse(lastResult);
+        return { ...lastResult, cancelled: true, noResponse };
+      }
+      const stoppedError = new Error('Status check stopped for refresh.');
+      stoppedError.code = 'STATUS_CHECK_STOPPED';
+      throw stoppedError;
+    }
   }
   throw new Error('Status check retry limit was reached unexpectedly.');
 }
@@ -918,7 +1211,32 @@ function showStatusResult(record, response) {
   }
 }
 
-async function checkRecordStatus(record, button) {
+function checkRecordStatus(record, button) {
+  if (state.statusCheckPromise) {
+    if (state.activeStatusCheckId === record._id && !$('statusCheckResponseDialog').open) {
+      $('statusCheckResponseDialog').showModal();
+    }
+    return state.statusCheckPromise;
+  }
+  if (state.checkingAll) {
+    showToast('Wait for Check All to finish before checking an individual record.', true);
+    return Promise.resolve();
+  }
+  state.stopStatusCheckRequested = false;
+  state.activeStatusCheckId = record._id;
+  const promise = runRecordStatusCheck(record, button);
+  state.statusCheckPromise = promise.finally(() => {
+    if (state.statusCheckPromise === trackedPromise) {
+      state.statusCheckPromise = null;
+      state.activeStatusCheckId = '';
+    }
+  });
+  const trackedPromise = state.statusCheckPromise;
+  return trackedPromise;
+}
+
+async function runRecordStatusCheck(record, button) {
+  openStatusCheckResponseDialog(record);
   if (button) {
     button.disabled = true;
     button.classList.add('is-checking');
@@ -930,16 +1248,51 @@ async function checkRecordStatus(record, button) {
       nin: record.nin,
       dobAd: record.dobAd,
       firstname: record.fullName.trim().split(/\s+/)[0],
-    }, (retryNumber) => showToast(`Voterlist server is unavailable. Retrying (${retryNumber}/${AUTOMATIC_STATUS_RETRIES})…`));
+    }, (retryNumber, reason) => {
+      const retryMessage = reason === 'no response'
+        ? 'No response received from voterlist server'
+        : 'Voterlist server is unavailable';
+      showToast(`${retryMessage}. Retrying (${retryNumber}/${AUTOMATIC_STATUS_RETRIES})…`);
+    }, () => state.stopStatusCheckRequested);
+    if (result.cancelled || state.stopStatusCheckRequested) return;
     showStatusResult(result.record, result.response);
-    const updatedRecord = { ...result.record, statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1 };
+    const updatedRecord = {
+      ...result.record,
+      statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1,
+      uniqueSearchResponses: cacheableSearchResponses(result.responses || []),
+    };
     state.records = state.records.map((item) => item._id === updatedRecord._id ? updatedRecord : item);
     state.recordsLoaded = true;
     cacheRecordsOrNotify();
+    if ($('statusCheckResponseDialog').dataset.recordId === updatedRecord._id) {
+      $('statusCheckResponseTitle').textContent = updatedRecord.fullName || 'Check response';
+      $('statusCheckRecordSummary').textContent = `NIN: ${updatedRecord.nin} · Date of birth: ${updatedRecord.dobAd} · Status: ${updatedRecord.status}`;
+      const hasResponseMessage = Boolean(batchResponseMessage(result.response));
+      renderLatestCheckResponse(
+        hasResponseMessage ? result.response : { message: 'No response received after automatic retries.' },
+        hasResponseMessage ? `HTTP ${result.response?.httpStatus ?? 'response'}` : 'No response received',
+      );
+      $('retryStatusCheckButton').hidden = !(result.noResponse || result.retryable);
+    }
+    if ($('recordDetailsDialog').open
+      && $('recordDetailsDialog').dataset.recordId === updatedRecord._id) {
+      $('recordResponsesContent').innerHTML = renderUniqueResponses(updatedRecord.uniqueSearchResponses);
+    }
     renderRecords();
   } catch (error) {
+    if (state.stopStatusCheckRequested || error.code === 'STATUS_CHECK_STOPPED') return;
+    if ($('statusCheckResponseDialog').dataset.recordId === record._id) {
+      renderLatestCheckResponse({
+        httpStatus: error.status ?? null,
+        body: error.response ?? { error: error.message },
+      }, 'Status check failed');
+      $('retryStatusCheckButton').hidden = !isRetryableStatusCheckError(error);
+    }
     showToast(error.message, true);
   } finally {
+    if ($('statusCheckResponseDialog').dataset.recordId === record._id) {
+      $('statusCheckResponseDialog').dataset.checking = 'false';
+    }
     if (button) {
       button.disabled = false;
       button.classList.remove('is-checking');
@@ -1117,7 +1470,6 @@ async function runBatchChecks(records) {
   $('checkAllButton').classList.remove('is-backgrounded');
   $('checkAllButton').setAttribute('aria-label', 'Checking all unfinished records; click to view progress');
   $('checkAllButton').title = 'Checking all unfinished records';
-  $('checkAllButton').querySelector('.toolbar-tool-label').textContent = 'Checking…';
   $('checkAllButton').setAttribute('aria-busy', 'true');
   $('checkAllProgress').max = records.length;
   $('checkAllProgress').value = 0;
@@ -1156,7 +1508,11 @@ async function runBatchChecks(records) {
           renderBatchResults();
         }
       }, () => state.stopBatchRequested);
-      const updatedRecord = { ...result.record, statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1 };
+      const updatedRecord = {
+        ...result.record,
+        statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1,
+        uniqueSearchResponses: cacheableSearchResponses(result.responses || []),
+      };
       state.records = state.records.map((item) => item._id === updatedRecord._id ? updatedRecord : item);
       state.recordsLoaded = true;
       cacheRecordsOrNotify();
@@ -1190,7 +1546,6 @@ async function runBatchChecks(records) {
   $('checkAllButton').classList.remove('is-backgrounded');
   $('checkAllButton').setAttribute('aria-label', 'Check all unfinished records');
   $('checkAllButton').title = 'Check all unfinished records';
-  $('checkAllButton').querySelector('.toolbar-tool-label').textContent = 'Check all';
   $('checkAllButton').removeAttribute('aria-busy');
   renderRecords();
   if (remaining) {
@@ -1400,6 +1755,7 @@ async function initializeApp() {
   }
 
   loadRecordColumnPreferences();
+  loadCachedWorkspaceSettings();
   $('loginForm').addEventListener('submit', handleLogin);
   $('recordForm').addEventListener('submit', handleCreateRecord);
   $('nin').addEventListener('input', (event) => {
@@ -1431,9 +1787,20 @@ async function initializeApp() {
   $('dobAd').addEventListener('change', () => syncDatePair('ad', true));
   $('dobBs').addEventListener('change', () => syncDatePair('bs', true));
   $('settingsButton').addEventListener('click', () => {
-    $('passwordMessage').textContent = '';
     $('settingsDialog').showModal();
   });
+  $('openPasswordDialogButton').addEventListener('click', () => {
+    $('passwordMessage').textContent = '';
+    $('passwordDialog').showModal();
+  });
+  $('openWorkspaceSettingsButton').addEventListener('click', () => {
+    $('workspacePasswordForm').reset();
+    $('workspacePasswordMessage').textContent = '';
+    $('settingsDialog').close();
+    $('workspacePasswordDialog').showModal();
+  });
+  $('workspacePasswordForm').addEventListener('submit', verifyWorkspaceAdminPassword);
+  $('workspaceSettingsForm').addEventListener('submit', saveWorkspaceSettings);
   $('passwordForm').addEventListener('submit', handlePasswordChange);
   $('passwordForm').querySelectorAll('[data-password-toggle]').forEach((toggle) => {
     toggle.addEventListener('click', () => {
@@ -1447,11 +1814,23 @@ async function initializeApp() {
     });
   });
   $('cancelSettingsButton').addEventListener('click', () => $('settingsDialog').close());
+  $('cancelPasswordButton').addEventListener('click', () => $('passwordDialog').close());
+  $('cancelWorkspacePasswordButton').addEventListener('click', () => $('workspacePasswordDialog').close());
+  $('cancelWorkspaceSettingsButton').addEventListener('click', () => $('workspaceSettingsDialog').close());
   $('closeRegistrationAnalyticsButton').addEventListener('click', () => $('registrationAnalyticsDialog').close());
   $('registrationAnalyticsDialog').addEventListener('click', (event) => {
     if (event.target === $('registrationAnalyticsDialog')) $('registrationAnalyticsDialog').close();
   });
   $('closeRecordDetailsButton').addEventListener('click', () => $('recordDetailsDialog').close());
+  $('closeStatusCheckResponseButton').addEventListener('click', () => $('statusCheckResponseDialog').close());
+  $('retryStatusCheckButton').addEventListener('click', () => {
+    const recordId = $('statusCheckResponseDialog').dataset.recordId;
+    const record = state.records.find((item) => item._id === recordId);
+    if (record) void checkRecordStatus(record, null);
+  });
+  $('statusCheckResponseDialog').addEventListener('click', (event) => {
+    if (event.target === $('statusCheckResponseDialog')) $('statusCheckResponseDialog').close();
+  });
   $('visitRecordQrButton').addEventListener('click', () => {
     const record = state.records.find((item) => item._id === $('recordDetailsDialog').dataset.recordId);
     if (!record?.qrToken) {
@@ -1475,8 +1854,24 @@ async function initializeApp() {
   $('settingsDialog').addEventListener('click', (event) => {
     if (event.target === $('settingsDialog')) $('settingsDialog').close();
   });
+  $('passwordDialog').addEventListener('click', (event) => {
+    if (event.target === $('passwordDialog')) $('passwordDialog').close();
+  });
+  $('workspacePasswordDialog').addEventListener('click', (event) => {
+    if (event.target === $('workspacePasswordDialog')) $('workspacePasswordDialog').close();
+  });
+  $('workspacePasswordDialog').addEventListener('close', () => {
+    $('workspacePasswordForm').reset();
+    $('workspacePasswordMessage').textContent = '';
+  });
+  $('workspaceSettingsDialog').addEventListener('click', (event) => {
+    if (event.target === $('workspaceSettingsDialog')) $('workspaceSettingsDialog').close();
+  });
   $('recordsSearch').addEventListener('input', renderRecords);
-  $('recordColumnsButton').addEventListener('click', openColumnSettings);
+  $('recordColumnsButton').addEventListener('click', () => {
+    $('settingsDialog').close();
+    openColumnSettings();
+  });
   $('backupRecordsButton').addEventListener('click', () => void backupRecords());
   $('printMultipleButton').addEventListener('click', () => {
     animateToolbarAction($('printMultipleButton'));
@@ -1539,6 +1934,10 @@ async function initializeApp() {
       }
       return;
     }
+    if (state.statusCheckPromise) {
+      showToast('Wait for the individual status check to finish before starting Check All.', true);
+      return;
+    }
     if (state.refreshingRecords) return;
     const button = $('checkAllButton');
     button.disabled = true;
@@ -1562,7 +1961,6 @@ async function initializeApp() {
         button.classList.remove('is-checking');
         button.setAttribute('aria-label', 'Check all unfinished records');
         button.title = 'Check all unfinished records';
-        button.querySelector('.toolbar-tool-label').textContent = 'Check all';
         button.removeAttribute('aria-busy');
       }
     }
@@ -1612,6 +2010,7 @@ async function initializeApp() {
     const session = await apiRequest('/api/auth');
     if (session.authenticated) {
       setScreen('appScreen');
+      await syncWorkspaceSettings();
       if (!loadCachedRecords()) await loadRecords({ force: true });
     } else {
       setScreen('loginScreen');

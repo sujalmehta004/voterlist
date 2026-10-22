@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createSession, hasValidSession, setSessionCookie } = require('../lib/auth');
 const authApi = require('../api/auth');
+const workspaceSettingsApi = require('../api/workspace-settings');
 const recordsApi = require('../api/records');
 const checkStatusApi = require('../api/check-status');
 const publicRecordApi = require('../api/public-record');
@@ -48,6 +49,56 @@ test('management APIs reject requests without an admin session', async () => {
   assert.equal((await invoke(checkStatusApi, request)).statusCode, 401);
   assert.equal((await invoke(voterSearchApi, request)).statusCode, 401);
   assert.equal((await invoke(authApi, { ...request, method: 'PUT', url: '/api/auth' })).statusCode, 401);
+  assert.equal((await invoke(workspaceSettingsApi, {
+    ...request,
+    method: 'GET',
+    url: '/api/workspace-settings',
+  })).statusCode, 401);
+  assert.equal((await invoke(workspaceSettingsApi, {
+    ...request,
+    method: 'POST',
+    url: '/api/workspace-settings',
+  })).statusCode, 401);
+});
+
+test('workspace settings require valid visibility values and keep one tab visible', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const cookieResponse = mockResponse();
+  setSessionCookie(cookieResponse, createSession());
+  const cookie = cookieResponse.headers['Set-Cookie'].split(';')[0];
+  const request = {
+    method: 'PUT',
+    url: '/api/workspace-settings',
+    headers: { cookie },
+    body: { hideEntryTab: true, hideDatabaseTab: true },
+  };
+
+  const bothHidden = await invoke(workspaceSettingsApi, request);
+  assert.equal(bothHidden.statusCode, 400);
+  assert.match(bothHidden.body.error, /at least one workspace tab/i);
+
+  const invalidValues = await invoke(workspaceSettingsApi, {
+    ...request,
+    body: { hideEntryTab: 'true', hideDatabaseTab: false },
+  });
+  assert.equal(invalidValues.statusCode, 400);
+  assert.match(invalidValues.body.error, /choose whether to hide/i);
+});
+
+test('workspace settings password verification requires a password', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const cookieResponse = mockResponse();
+  setSessionCookie(cookieResponse, createSession());
+  const cookie = cookieResponse.headers['Set-Cookie'].split(';')[0];
+  const response = await invoke(workspaceSettingsApi, {
+    method: 'POST',
+    url: '/api/workspace-settings',
+    headers: { cookie },
+    body: {},
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body.error, /enter the admin password/i);
 });
 
 test('auth status reports unauthenticated without connecting to the database', async () => {

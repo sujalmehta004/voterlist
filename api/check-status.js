@@ -1,6 +1,6 @@
 const connectToDatabase = require('../lib/db');
 const VoterlistData = require('../lib/models/VoterlistData');
-const { responseHash: hashResponse, saveStatusResponse } = require('../lib/voterlist-history');
+const { saveRecordUpdate, saveStatusResponse } = require('../lib/voterlist-history');
 const searchVoter = require('./voter-search');
 const { hasValidSession } = require('../lib/auth');
 const { readJsonBody, sendJson } = require('../lib/http');
@@ -11,7 +11,7 @@ const {
   extractVoterIdentifiers,
   extractSearchMessage,
   statusFromSearch,
-  isVoterServerUnavailable,
+  findVoterServerUnavailableMessage,
   containsPortraitData,
 } = require('../lib/records');
 
@@ -61,13 +61,17 @@ module.exports = async function checkStatus(req, res) {
       && search.statusCode < 300
       && search.data?.success === true;
     const remoteMessage = extractSearchMessage(search.data);
-    const serverUnavailable = isVoterServerUnavailable(remoteMessage);
+    const outageMessage = findVoterServerUnavailableMessage(search.data);
+    const serverUnavailable = Boolean(outageMessage);
     const portraitReceived = searchSucceeded && containsPortraitData(search.data);
     const identifiers = extractVoterIdentifiers(search.data);
     const identifier = identifiers.voterListNumber || identifiers.abedanNumber;
-    const status = serverUnavailable
-      ? record.status
-      : statusFromSearch(searchSucceeded, identifiers, remoteMessage, { portraitReceived });
+    const status = statusFromSearch(
+      searchSucceeded,
+      identifiers,
+      outageMessage || remoteMessage,
+      { portraitReceived, currentStatus: record.status },
+    );
     const voterListNumber = serverUnavailable ? record.voterListNumber : identifiers.voterListNumber;
     const abedanNumber = serverUnavailable ? record.abedanNumber : identifiers.abedanNumber;
 
@@ -92,16 +96,22 @@ module.exports = async function checkStatus(req, res) {
         ? { success: true, message: PORTRAIT_SUCCESS_MESSAGE }
         : search.data,
     };
-    const responseHash = hashResponse(fullResponse);
-    const { requestCount } = await saveStatusResponse(updated._id, {
+    const { requestCount, responses } = await saveStatusResponse(updated._id, {
       searchSucceeded,
-      responseHash,
       fullResponse,
     });
+    if (record.status !== status) {
+      await saveRecordUpdate(updated._id, [{
+        field: 'status',
+        before: record.status,
+        after: status,
+      }]);
+    }
     return sendJson(res, 200, {
       record: { ...updated.toObject(), statusCheckCount: requestCount },
       searchSucceeded,
       requestCount,
+      responses,
       response: fullResponse,
       retryable: serverUnavailable,
     });

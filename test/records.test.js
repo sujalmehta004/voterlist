@@ -9,9 +9,14 @@ const {
   extractSearchMessage,
   statusFromSearch,
   isVoterServerUnavailable,
+  findVoterServerUnavailableMessage,
   containsPortraitData,
 } = require('../lib/records');
-const { mergeHistoryDocuments } = require('../lib/voterlist-history');
+const {
+  mergeHistoryDocuments,
+  responseHash,
+  uniqueResponses,
+} = require('../lib/voterlist-history');
 
 test('normalizes a 10-digit NIN', () => {
   assert.equal(normalizeNin('615-385-908-6'), '615-385-908-6');
@@ -99,10 +104,30 @@ test('keeps successful searches without a number PENDING and failed searches NOT
   assert.equal(statusFromSearch(true, { voterListNumber: '', abedanNumber: '' }, pendingMessage), 'PENDING');
 });
 
-test('recognizes voterlist portal outages for retry without changing existing status', () => {
+test('recognizes nested voterlist outages and preserves the existing status', () => {
   const outage = 'NID सर्भरबाट डेटा प्राप्त हुन सकेन। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।';
+  const ninOutage = 'NIN सर्भरबाट डेटा प्राप्त हुन सकेन। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।';
   assert.equal(isVoterServerUnavailable(outage), true);
+  assert.equal(isVoterServerUnavailable(ninOutage), true);
   assert.equal(isVoterServerUnavailable('No record found'), false);
+  const nestedResponse = {
+    message: 'The search could not be completed.',
+    data: { error: ninOutage },
+  };
+  const outageMessage = findVoterServerUnavailableMessage(nestedResponse);
+  assert.equal(outageMessage, ninOutage);
+  assert.equal(
+    statusFromSearch(false, { voterListNumber: '', abedanNumber: '' }, outageMessage, { currentStatus: 'DONE' }),
+    'DONE',
+  );
+  assert.equal(
+    statusFromSearch(false, { voterListNumber: '', abedanNumber: '' }, outageMessage, { currentStatus: 'NOT ONLINE' }),
+    'NOT ONLINE',
+  );
+  assert.equal(
+    statusFromSearch(false, { voterListNumber: '', abedanNumber: '' }, outageMessage, { currentStatus: 'PENDING' }),
+    'PENDING',
+  );
 });
 
 test('detects portrait responses without retaining their image payload in the sanitized record', () => {
@@ -188,4 +213,38 @@ test('consolidates repeated check history to unique responses and preserves edit
     },
   ]);
   assert.equal(differentlyOrdered.responses.length, 1);
+});
+
+test('deduplicates saved response messages independently of HTTP status and payload metadata', () => {
+  const message = 'NIN सर्भरबाट डेटा प्राप्त हुन सकेन। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।';
+  const firstResponse = {
+    httpStatus: 200,
+    body: { message, traceId: 'first-request' },
+  };
+  const repeatedResponse = {
+    httpStatus: 503,
+    body: { traceId: 'second-request', message },
+  };
+  assert.equal(responseHash(firstResponse), responseHash(repeatedResponse));
+
+  const unique = uniqueResponses([
+    { changedAt: new Date('2026-01-02T10:00:00Z'), fullResponse: repeatedResponse },
+    { changedAt: new Date('2026-01-01T10:00:00Z'), fullResponse: firstResponse },
+  ]);
+  assert.equal(unique.length, 1);
+  assert.equal(unique[0].fullResponse.body.traceId, 'second-request');
+
+  const merged = mergeHistoryDocuments([
+    {
+      action: 'STATUS_CHECK',
+      changedAt: new Date('2026-01-01T10:00:00Z'),
+      fullResponse: firstResponse,
+    },
+    {
+      action: 'STATUS_CHECK',
+      changedAt: new Date('2026-01-02T10:00:00Z'),
+      fullResponse: repeatedResponse,
+    },
+  ]);
+  assert.equal(merged.responses.length, 1);
 });

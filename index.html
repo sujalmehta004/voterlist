@@ -93,26 +93,6 @@
       <section id="tab-records" class="tab-panel hidden">
         <div id="statusCounts" class="status-counts" role="group" aria-label="Filter records by status"></div>
         <div class="panel table-panel">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">VOTERLIST DATA</p>
-              <h2>All records</h2>
-            </div>
-            <div class="heading-actions">
-              <button id="backupRecordsButton" class="button toolbar-tool-action backup-tool-action" type="button" aria-label="Backup JSON" title="Backup JSON">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
-                <span class="toolbar-tool-label">Backup JSON</span>
-              </button>
-              <button id="printMultipleButton" class="button toolbar-tool-action print-tool-action" type="button" aria-label="Print multiple" title="Print multiple">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7zM17 11h.01"/></svg>
-                <span class="toolbar-tool-label">Print multiple</span>
-              </button>
-              <button id="checkAllButton" class="button check-all-action" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg>
-                <span class="toolbar-tool-label">Check all</span>
-              </button>
-            </div>
-          </div>
           <div class="table-filters">
             <div class="field">
               <label for="recordsSearch">Search records</label>
@@ -137,11 +117,17 @@
               </select>
             </div>
             <div class="table-filter-actions">
-              <button id="clearFiltersButton" class="button clear-filters" type="button">Clear filters</button>
-              <button id="recordColumnsButton" class="button columns-tool-button" type="button">Columns</button>
+              <button id="clearFiltersButton" class="button clear-filters icon-only-action" type="button" aria-label="Clear filters" title="Clear filters">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6.2 7.1V18l-3.6 1v-6.9L4 5Z"/><path d="m9 9 6 6m0-6-6 6"/></svg>
+              </button>
+              <button id="printMultipleButton" class="button toolbar-tool-action toolbar-icon-only print-tool-action" type="button" aria-label="Print multiple" title="Print multiple">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7zM17 11h.01"/></svg>
+              </button>
+              <button id="checkAllButton" class="button check-all-action toolbar-icon-only" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg>
+              </button>
             </div>
           </div>
-          <div id="recordsCountSummary" class="records-count-summary" aria-live="polite"></div>
           <div class="table-scroll">
             <table>
               <thead><tr>
@@ -254,6 +240,20 @@
     </div>
   </dialog>
 
+  <dialog id="statusCheckResponseDialog" class="record-details-dialog status-check-response-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">STATUS CHECK</p>
+    <h2 id="statusCheckResponseTitle">Check response</h2>
+    <p id="statusCheckRecordSummary" class="status-check-record-summary"></p>
+    <div id="latestCheckResponseContent" class="latest-check-response"><p class="muted small-text">Checking status…</p></div>
+    <div class="dialog-actions">
+      <button id="retryStatusCheckButton" class="button primary hidden" type="button">Try again</button>
+      <button id="closeStatusCheckResponseButton" class="button subtle" type="button">Close</button>
+    </div>
+  </dialog>
+
   <dialog id="recordUpdatesDialog" class="record-details-dialog updates-history-dialog">
     <form method="dialog" class="dialog-close-form">
       <button class="dialog-close" type="submit" aria-label="Close">×</button>
@@ -271,6 +271,85 @@
       <button class="dialog-close" type="submit" aria-label="Close">×</button>
     </form>
     <p class="eyebrow">ADMIN SETTINGS</p>
+    <h2>Settings</h2>
+    <section class="settings-section settings-backup-section">
+      <div class="settings-backup-row">
+        <h3>Backup</h3>
+        <button id="backupRecordsButton" class="button toolbar-tool-action backup-tool-action" type="button" aria-label="Download JSON backup" title="Download JSON backup">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+          <span class="toolbar-tool-label">Download</span>
+        </button>
+      </div>
+    </section>
+    <section class="settings-section">
+      <h3>Table display</h3>
+      <p class="muted small-text">Choose which record columns are shown in the database table.</p>
+      <button id="recordColumnsButton" class="button columns-tool-button" type="button">Columns</button>
+    </section>
+    <section class="settings-section">
+      <h3>Admin security</h3>
+      <p class="muted small-text">Update the password used to access this workspace.</p>
+      <button id="openPasswordDialogButton" class="button subtle" type="button">Change password</button>
+    </section>
+    <section class="settings-section">
+      <h3>Workspace settings</h3>
+      <p class="muted small-text">Control which workspace tabs are visible.</p>
+      <button id="openWorkspaceSettingsButton" class="button subtle" type="button">Workspace settings</button>
+    </section>
+    <div class="dialog-actions">
+      <button id="cancelSettingsButton" class="button subtle" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="workspacePasswordDialog" class="check-dialog settings-dialog password-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">ADMIN VERIFICATION</p>
+    <h2>Confirm your password</h2>
+    <p class="muted">Enter the admin password to open workspace settings.</p>
+    <form id="workspacePasswordForm" class="settings-form">
+      <div class="field">
+        <label for="workspaceAdminPassword">Admin password</label>
+        <input id="workspaceAdminPassword" type="password" autocomplete="current-password" required />
+      </div>
+      <p id="workspacePasswordMessage" class="message" role="status"></p>
+      <div class="dialog-actions">
+        <button id="cancelWorkspacePasswordButton" class="button subtle" type="button">Cancel</button>
+        <button id="confirmWorkspacePasswordButton" class="button primary" type="submit">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="workspaceSettingsDialog" class="check-dialog settings-dialog workspace-settings-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">WORKSPACE SETTINGS</p>
+    <h2>Tab visibility</h2>
+    <p class="muted small-text">Choose which tabs are visible. At least one workspace tab must remain visible.</p>
+    <form id="workspaceSettingsForm" class="settings-form">
+      <label class="workspace-setting-option">
+        <input id="hideEntryTab" type="checkbox" />
+        <span>Hide Entry tab</span>
+      </label>
+      <label class="workspace-setting-option">
+        <input id="hideDatabaseTab" type="checkbox" />
+        <span>Hide Database tab (Records &amp; Status)</span>
+      </label>
+      <p id="workspaceSettingsMessage" class="message" role="status"></p>
+      <div class="dialog-actions">
+        <button id="cancelWorkspaceSettingsButton" class="button subtle" type="button">Cancel</button>
+        <button id="saveWorkspaceSettingsButton" class="button primary" type="submit">Save workspace settings</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="passwordDialog" class="check-dialog settings-dialog password-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">ADMIN SECURITY</p>
     <h2>Change admin password</h2>
     <p class="muted">The new password will be saved to the shared database configuration.</p>
     <form id="passwordForm" class="settings-form">
@@ -303,7 +382,7 @@
       </div>
       <p id="passwordMessage" class="message" role="status"></p>
       <div class="dialog-actions">
-        <button id="cancelSettingsButton" class="button subtle" type="button">Cancel</button>
+        <button id="cancelPasswordButton" class="button subtle" type="button">Cancel</button>
         <button id="savePasswordButton" class="button primary" type="submit">Update password</button>
       </div>
     </form>
