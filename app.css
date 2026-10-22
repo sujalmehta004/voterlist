@@ -172,7 +172,7 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .status-done .status-symbol { color: #238450; }
 .status-label { color: #546975; background: #edf2f3; }
 .table-panel { margin-top: 0; }
-.status-counts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+.status-counts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
 .status-count-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; min-height: 68px; padding: 12px 15px; border: 1px solid #e1e8e9; border-radius: 13px; background: #fff; color: var(--ink); text-align: left; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
 .status-count-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(23, 43, 58, .08); }
 .status-count-card.active { border-color: #6faaa3; box-shadow: 0 0 0 2px rgba(15, 118, 110, .13); }
@@ -180,11 +180,19 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .status-card-pending .status-count-icon { color: #a86b08; background: #fff2d2; }
 .status-card-done .status-count-icon { color: #207748; background: #dcf5e4; }
 .status-card-not-done .status-count-icon { color: #315fc2; background: #e8efff; }
+.status-card-registered-today .status-count-icon { color: #087b91; background: #dff6fa; }
 .status-count-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 17px; font-weight: 600; }
 .status-count-label { color: #596d78; font-size: 12px; }
 .status-count-card strong { font-size: 22px; font-weight: 550; }
+.registration-analytics-dialog { width: min(680px, calc(100% - 32px)); max-height: min(90vh, 800px); overflow: auto; }
+.registration-analytics-content { display: grid; gap: 18px; margin-top: 18px; }
+.registration-analytics-section h3 { margin: 0 0 9px; color: #425969; font-size: 12px; font-weight: 500; }
+.registration-analytics-list { display: grid; gap: 7px; }
+.registration-analytics-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fbfdfd; }
+.registration-analytics-row span { color: #526771; }
+.registration-analytics-row strong { font-weight: 550; }
 .records-count-summary { min-height: 26px; margin: 0 2px 9px; color: #667987; font-size: 11px; }
-.table-filters { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(200px, 1fr) auto; align-items: end; gap: 10px; margin: 0 0 14px; }
+.table-filters { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(170px, 1fr) minmax(170px, 1fr) auto; align-items: end; gap: 10px; margin: 0 0 14px; }
 .table-filter-actions { display: flex; align-items: center; gap: 8px; }
 .table-filters .field label { min-height: 15px; white-space: nowrap; }
 .table-filters input, .table-filters select { min-width: 0; padding: 9px 10px; font-size: 12px; }
@@ -313,6 +321,16 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
 .batch-dialog .dialog-actions { flex-wrap: wrap; margin-top: 14px; }
 .check-dialog progress { width: 100%; height: 8px; margin: 8px 0; accent-color: var(--teal); }
+.multiple-print-dialog { width: min(760px, calc(100% - 32px)); max-height: min(90vh, 820px); overflow: auto; }
+.multiple-print-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 18px 0 10px; }
+.multiple-print-select-all { display: inline-flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+.multiple-print-select-all input, .multiple-print-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--teal); }
+.multiple-print-records { display: grid; max-height: min(52vh, 520px); gap: 6px; overflow: auto; padding: 1px; }
+.multiple-print-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fbfdfd; cursor: pointer; }
+.multiple-print-row span { min-width: 0; overflow-wrap: anywhere; }
+.multiple-print-row strong { display: block; font-size: 12px; font-weight: 500; }
+.multiple-print-row small { color: var(--muted); font-size: 10px; }
+.multiple-print-empty { padding: 18px; color: var(--muted); text-align: center; }
 .settings-dialog { max-height: min(90vh, 700px); overflow-y: auto; }
 .settings-form { display: grid; gap: 14px; }
 .settings-form .message { margin: 0; }
@@ -331,7 +349,7 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 .password-visibility-toggle[aria-pressed="true"] .eye-slash { display: block; }
 
 @media (max-width: 1200px) {
-  .table-filters { grid-template-columns: minmax(200px, 2fr) minmax(180px, 1fr) auto; }
+  .table-filters { grid-template-columns: minmax(200px, 2fr) minmax(180px, 1fr) minmax(180px, 1fr) auto; }
   .status-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .clear-filters { justify-self: start; }
 }
@@ -349,6 +367,7 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .section-heading { flex-direction: column; }
   .heading-actions { width: 100%; }
   .heading-actions .button { flex: 1; }
+  .heading-actions .check-all-action { flex: 0 0 42px; }
   .form-actions { align-items: stretch; flex-direction: column; }
   .update-confirmation { width: 100%; }
   .record-modal-grid { grid-template-columns: 1fr; }
@@ -371,29 +390,33 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .batch-group-toolbar { align-items: stretch; flex-direction: column; }
   .batch-group-retry { align-self: flex-start; margin: 0 0 4px; }
   .batch-dialog .dialog-actions { margin-top: 10px; }
+  .multiple-print-dialog { width: calc(100% - 16px); max-height: 96vh; padding: 18px 12px; }
+  .multiple-print-toolbar { align-items: flex-start; flex-direction: column; }
 }
 
 @page { size: A4; margin: 10mm; }
 @media print {
-  body { background: #fff; }
-  body * { visibility: hidden !important; }
-  #printSheet, #printSheet * { visibility: visible !important; }
+  html, body { width: 190mm; min-height: 0; margin: 0 !important; padding: 0 !important; background: #fff; }
+  body > :not(#printSheet) { display: none !important; }
   #printSheet {
-    position: absolute;
-    top: 0;
-    left: 0;
-    display: block;
+    display: block !important;
     width: 190mm;
-    height: auto;
+    margin: 0;
+    padding: 0;
+    color: #111;
+    font-family: Arial, sans-serif;
+  }
+  .print-page {
+    width: 190mm;
     max-height: 118mm;
     padding: 2mm;
-    color: #111;
-    background: #fff;
-    font-family: Arial, sans-serif;
     box-sizing: border-box;
     break-inside: avoid;
     page-break-inside: avoid;
+    break-after: page;
+    page-break-after: always;
   }
+  .print-page:last-child { break-after: auto; page-break-after: auto; }
   .print-card { width: 100%; padding: 3mm; border: .35mm solid #b9c9c7; border-radius: 2mm; background: #fff; box-sizing: border-box; }
   .print-main { display: grid; grid-template-columns: minmax(0, 1fr) 48mm; gap: 4mm; padding-bottom: 2mm; border-bottom: .35mm solid #176f66; }
   .print-person { align-self: center; }
@@ -411,4 +434,19 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .print-contacts { display: flex; align-items: center; gap: 4mm; color: #31494b; font-size: 7pt; font-weight: 600; white-space: nowrap; }
   .print-whatsapp { display: inline-flex; align-items: center; gap: 1mm; }
   .print-whatsapp svg { width: 3.5mm; height: 3.5mm; fill: none; stroke: #00c853; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .bulk-print-page { display: flex; height: 270mm; max-height: none; flex-direction: column; gap: 2mm; }
+  .compact-print-card { display: flex; min-height: 0; flex: 1; flex-direction: column; justify-content: space-between; padding: 1.5mm 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+  .compact-print-card .print-main { grid-template-columns: minmax(0, 1fr) 30mm; gap: 2mm; padding-bottom: 1mm; }
+  .compact-print-card .print-person h1 { margin-bottom: 1mm; font-size: 10pt; }
+  .compact-print-card .print-qr { width: 30mm; height: 30mm; padding: .5mm; }
+  .compact-print-card .print-qr img, .compact-print-card .print-qr canvas { width: 28mm !important; height: 28mm !important; }
+  .compact-print-card .print-fields { gap: .6mm 1mm; }
+  .compact-print-card .print-field { padding: .5mm .8mm; }
+  .compact-print-card .print-field span { margin-bottom: 0; font-size: 4.2pt; }
+  .compact-print-card .print-field strong { font-size: 5.2pt; }
+  .compact-print-card .print-note { gap: 0; margin: .7mm 0; padding-left: 3mm; font-size: 4.5pt; line-height: 1.15; }
+  .compact-print-card .print-footer { flex-direction: row; justify-content: space-between; gap: 1mm; padding: .7mm 1mm; }
+  .compact-print-card .print-footer > strong { font-size: 6pt; }
+  .compact-print-card .print-contacts { gap: 2mm; font-size: 5.5pt; }
+  .compact-print-card .print-whatsapp svg { width: 2.5mm; height: 2.5mm; }
 }

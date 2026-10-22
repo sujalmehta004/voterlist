@@ -69,6 +69,7 @@ async function softRefresh() {
   resetRecordForm();
   $('recordsSearch').value = '';
   $('datePeriodFilter').value = 'ALL';
+  $('registrationSort').value = 'NEWEST';
   state.selectedStatusFilter = 'NOT DONE';
   $('checkAllDialog').close();
   $('settingsDialog').close();
@@ -412,10 +413,79 @@ function matchesDatePeriod(record, period) {
   return createdAt >= start && createdAt < end;
 }
 
+function registrationDateParts(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    year: date.getFullYear(),
+    month: date.getMonth(),
+    day: date.getDate(),
+  };
+}
+
+function countRegistrationsForDate(records, year, month, day) {
+  return records.filter((record) => {
+    const parts = registrationDateParts(record.createdAt);
+    return parts && parts.year === year && parts.month === month && parts.day === day;
+  }).length;
+}
+
+function countRegistrationsForMonth(records, year, month) {
+  return records.filter((record) => {
+    const parts = registrationDateParts(record.createdAt);
+    return parts && parts.year === year && parts.month === month;
+  }).length;
+}
+
+function countRegistrationsForYear(records, year) {
+  return records.filter((record) => registrationDateParts(record.createdAt)?.year === year).length;
+}
+
+function renderRegistrationAnalytics() {
+  const now = new Date();
+  const sevenDayCounts = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index));
+    return {
+      label: date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+      count: countRegistrationsForDate(state.records, date.getFullYear(), date.getMonth(), date.getDate()),
+    };
+  });
+  const monthCounts = Array.from({ length: 4 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+    return {
+      label: date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+      count: countRegistrationsForMonth(state.records, date.getFullYear(), date.getMonth()),
+    };
+  });
+  const yearCounts = [now.getFullYear(), now.getFullYear() - 1].map((year) => ({
+    label: String(year),
+    count: countRegistrationsForYear(state.records, year),
+  }));
+  const renderRows = (rows) => rows.map(({ label, count }) => `
+    <div class="registration-analytics-row"><span>${escapeHtml(label)}</span><strong>${count}</strong></div>
+  `).join('');
+
+  $('registrationAnalyticsContent').innerHTML = `
+    <section class="registration-analytics-section">
+      <h3>Previous 7 days (including today)</h3>
+      <div class="registration-analytics-list">${renderRows(sevenDayCounts)}</div>
+    </section>
+    <section class="registration-analytics-section">
+      <h3>This month and previous 3 months</h3>
+      <div class="registration-analytics-list">${renderRows(monthCounts)}</div>
+    </section>
+    <section class="registration-analytics-section">
+      <h3>This year and previous year</h3>
+      <div class="registration-analytics-list">${renderRows(yearCounts)}</div>
+    </section>
+  `;
+}
+
 function visibleRecords() {
   const search = $('recordsSearch').value;
   const datePeriod = $('datePeriodFilter').value;
-  return state.records.filter((record) => {
+  const records = state.records.filter((record) => {
     const status = recordStatus(record);
     const matchesStatus = Boolean(search.trim())
       || state.selectedStatusFilter === 'ALL'
@@ -424,6 +494,15 @@ function visibleRecords() {
     return matchesStatus
       && matchesRecordSearch(record, search)
       && matchesDatePeriod(record, datePeriod);
+  });
+  const direction = $('registrationSort')?.value === 'OLDEST' ? 1 : -1;
+  return records.sort((left, right) => {
+    const leftDate = new Date(left.createdAt || 0).getTime();
+    const rightDate = new Date(right.createdAt || 0).getTime();
+    const leftValid = Number.isFinite(leftDate) && leftDate > 0;
+    const rightValid = Number.isFinite(rightDate) && rightDate > 0;
+    if (!leftValid || !rightValid) return Number(rightValid) - Number(leftValid);
+    return (leftDate - rightDate) * direction;
   });
 }
 
@@ -577,6 +656,13 @@ function renderRecords() {
   const recordsBody = $('recordsBody');
   const pending = state.records.filter((record) => recordStatus(record) !== 'DONE');
   const filteredRecords = visibleRecords();
+  const today = new Date();
+  const registeredTodayCount = countRegistrationsForDate(
+    state.records,
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
   $('pendingCount').textContent = String(pending.length);
   $('statusCounts').innerHTML = [
     { status: 'ALL', label: 'All records', symbol: '▤', count: state.records.length },
@@ -590,7 +676,12 @@ function renderRecords() {
       <span class="status-count-label">${escapeHtml(item.label)}</span>
       <strong>${item.count}</strong>
     </button>
-  `).join('');
+  `).join('') + `
+    <button class="status-count-card status-card-registered-today" type="button" data-registration-analytics aria-haspopup="dialog" aria-label="Show registration analytics; ${registeredTodayCount} registered today">
+      <span class="status-count-icon" aria-hidden="true">＋</span>
+      <span class="status-count-label">Registered today</span>
+      <strong>${registeredTodayCount}</strong>
+    </button>`;
   const activeFilterLabel = $('recordsSearch').value.trim()
     ? 'search results across all statuses'
     : state.selectedStatusFilter === 'ALL'
@@ -624,6 +715,10 @@ function renderRecords() {
       state.selectedStatusFilter = button.dataset.statusFilter;
       renderRecords();
     });
+  });
+  $('statusCounts').querySelector('[data-registration-analytics]')?.addEventListener('click', () => {
+    renderRegistrationAnalytics();
+    $('registrationAnalyticsDialog').showModal();
   });
   recordsBody.querySelectorAll('[data-record-row]').forEach((row) => {
     const showDetails = () => {
@@ -1076,23 +1171,7 @@ function verificationUrl(record) {
   return `https://voterlist.sujalmehta.com.np/verify/${encodeURIComponent(record.qrToken)}`;
 }
 
-function printRecord(record) {
-  if (typeof window.QRCode !== 'function') {
-    showToast('QR generator did not load. Check your connection and reload before printing.', true);
-    return;
-  }
-  const qrContainer = $('printQr');
-  qrContainer.innerHTML = '';
-  const link = verificationUrl(record);
-  new window.QRCode(qrContainer, {
-    text: link,
-    width: 320,
-    height: 320,
-    colorDark: '#102c32',
-    colorLight: '#ffffff',
-    correctLevel: window.QRCode.CorrectLevel.H,
-  });
-
+function printCardMarkup(record, index, compact) {
   const fields = [
     ['NID / NIN', record.nin],
     ['Date of birth (AD)', record.dobAd],
@@ -1100,11 +1179,105 @@ function printRecord(record) {
     ['Mobile number', record.mobile],
     ['Notes', record.notes],
   ];
-  $('printPersonName').textContent = record.fullName || 'Voterlist form record';
-  $('printFields').innerHTML = fields.map(([label, value]) => `
-    <div class="print-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '—')}</strong></div>
-  `).join('');
+  return `
+      <div class="print-card${compact ? ' compact-print-card' : ''}">
+        <div class="print-main">
+          <div class="print-person">
+            <p class="print-eyebrow">VOTERLIST FORM RECORD</p>
+            <h1>${escapeHtml(record.fullName || 'Voterlist form record')}</h1>
+            <div class="print-fields">
+              ${fields.map(([label, value]) => `
+                <div class="print-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '—')}</strong></div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="print-qr" data-print-qr="${index}"></div>
+        </div>
+        <ul class="print-note">
+          <li>राष्ट्रिय परिचयपत्र अनलाइन सक्रिय भएपछि त्यसको जानकारीको सन्देश तपाईंको फोनमा प्राप्त हुनेछ।</li>
+          <li>सन्देश प्राप्त भएपछि यहाँ दर्ता गरिएको विवरण अनलाइनमा हेर्न सक्नुहुनेछ।</li>
+          <li>तपाईंको निवेदनको स्थिति जाँच गर्न QR स्क्यान गर्नुहोस्। सबै अपडेट यहीँ उपलब्ध हुनेछन्।</li>
+          <li>तपाईंसँग WhatsApp नम्बर भएमा दर्ता गरिएको PDF उक्त नम्बरमा पठाइनेछ।</li>
+        </ul>
+        <footer class="print-footer">
+          <strong>INTERNATIONAL DIGITAL PHOTO STUDIO</strong>
+          <div class="print-contacts">
+            <span class="print-whatsapp">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.5-4.9a8.4 8.4 0 1 1 16-3.9Z"/><path d="M8.2 7.8c.2-.4.4-.4.7-.4h.5c.2 0 .4.1.5.4l.8 1.9c.1.2.1.4-.1.6l-.6.7c-.2.2-.2.4-.1.6.5.9 1.3 1.7 2.2 2.2.2.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4 0 .3-.2 1.1-.7 1.5-.5.4-1.1.6-1.8.5-.8-.1-1.8-.5-3.1-1.4-1.7-1.2-2.8-2.9-3.1-3.7-.3-.8-.3-1.5 0-2 .2-.5.5-.9.7-1.2Z"/></svg>
+              9804090881
+            </span>
+            <span>☎ 9842101229</span>
+          </div>
+        </footer>
+      </div>
+  `;
+}
+
+function printRecords(records) {
+  if (typeof window.QRCode !== 'function') {
+    showToast('QR generator did not load. Check your connection and reload before printing.', true);
+    return;
+  }
+  if (!records.length) return;
+  const printSheet = $('printSheet');
+  const recordsPerPage = records.length > 1 ? 3 : 1;
+  const pages = [];
+  for (let start = 0; start < records.length; start += recordsPerPage) {
+    const pageRecords = records.slice(start, start + recordsPerPage);
+    const compact = records.length > 1;
+    pages.push(`
+      <div class="print-page${compact ? ' bulk-print-page' : ''}">
+        ${pageRecords.map((record, offset) => printCardMarkup(record, start + offset, compact)).join('')}
+      </div>
+    `);
+  }
+  printSheet.innerHTML = pages.join('');
+  records.forEach((record, index) => {
+    const qrContainer = printSheet.querySelector(`[data-print-qr="${index}"]`);
+    new window.QRCode(qrContainer, {
+      text: verificationUrl(record),
+      width: 320,
+      height: 320,
+      colorDark: '#102c32',
+      colorLight: '#ffffff',
+      correctLevel: window.QRCode.CorrectLevel.H,
+    });
+  });
+  window.addEventListener('afterprint', () => {
+    printSheet.replaceChildren();
+  }, { once: true });
   window.setTimeout(() => window.print(), 250);
+}
+
+function printRecord(record) {
+  printRecords([record]);
+}
+
+function updateMultiplePrintSelection() {
+  const checkboxes = [...$('multiplePrintRecords').querySelectorAll('[data-print-select]')];
+  const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+  $('selectedPrintCount').textContent = `${selectedCount} selected`;
+  $('printSelectedRecordsButton').disabled = selectedCount === 0;
+  $('selectAllPrintRecords').checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+  $('selectAllPrintRecords').indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+}
+
+function openMultiplePrintDialog() {
+  const container = $('multiplePrintRecords');
+  if (!state.records.length) {
+    container.innerHTML = '<p class="multiple-print-empty">No records are available to print.</p>';
+  } else {
+    container.innerHTML = state.records.map((record) => `
+      <label class="multiple-print-row">
+        <input type="checkbox" data-print-select="${escapeHtml(record._id)}" />
+        <span><strong>${escapeHtml(record.fullName)}</strong><small>${escapeHtml(record.nin)} · ${escapeHtml(formatBsDate(record.createdAt))} BS</small></span>
+      </label>
+    `).join('');
+  }
+  $('selectAllPrintRecords').checked = false;
+  $('selectAllPrintRecords').indeterminate = false;
+  updateMultiplePrintSelection();
+  $('multiplePrintDialog').showModal();
 }
 
 function renderPublicRecord(record) {
@@ -1203,6 +1376,10 @@ async function initializeApp() {
     });
   });
   $('cancelSettingsButton').addEventListener('click', () => $('settingsDialog').close());
+  $('closeRegistrationAnalyticsButton').addEventListener('click', () => $('registrationAnalyticsDialog').close());
+  $('registrationAnalyticsDialog').addEventListener('click', (event) => {
+    if (event.target === $('registrationAnalyticsDialog')) $('registrationAnalyticsDialog').close();
+  });
   $('closeRecordDetailsButton').addEventListener('click', () => $('recordDetailsDialog').close());
   $('visitRecordQrButton').addEventListener('click', () => {
     const record = state.records.find((item) => item._id === $('recordDetailsDialog').dataset.recordId);
@@ -1229,15 +1406,40 @@ async function initializeApp() {
   });
   $('recordsSearch').addEventListener('input', renderRecords);
   $('recordColumnsButton').addEventListener('click', openColumnSettings);
+  $('printMultipleButton').addEventListener('click', openMultiplePrintDialog);
+  $('selectAllPrintRecords').addEventListener('change', (event) => {
+    $('multiplePrintRecords').querySelectorAll('[data-print-select]').forEach((checkbox) => {
+      checkbox.checked = event.currentTarget.checked;
+    });
+    updateMultiplePrintSelection();
+  });
+  $('multiplePrintRecords').addEventListener('change', updateMultiplePrintSelection);
+  $('printSelectedRecordsButton').addEventListener('click', () => {
+    const selectedIds = new Set([...$('multiplePrintRecords').querySelectorAll('[data-print-select]:checked')]
+      .map((checkbox) => checkbox.dataset.printSelect));
+    const selectedRecords = state.records.filter((record) => selectedIds.has(record._id));
+    if (!selectedRecords.length) {
+      showToast('Select at least one record to print.', true);
+      return;
+    }
+    $('multiplePrintDialog').close();
+    printRecords(selectedRecords);
+  });
+  $('cancelMultiplePrintButton').addEventListener('click', () => $('multiplePrintDialog').close());
+  $('multiplePrintDialog').addEventListener('click', (event) => {
+    if (event.target === $('multiplePrintDialog')) $('multiplePrintDialog').close();
+  });
   $('saveColumnSettingsButton').addEventListener('click', saveColumnSettings);
   $('cancelColumnSettingsButton').addEventListener('click', () => $('recordColumnsDialog').close());
   $('recordColumnsDialog').addEventListener('click', (event) => {
     if (event.target === $('recordColumnsDialog')) $('recordColumnsDialog').close();
   });
   $('datePeriodFilter').addEventListener('change', renderRecords);
+  $('registrationSort').addEventListener('change', renderRecords);
   $('clearFiltersButton').addEventListener('click', () => {
     $('recordsSearch').value = '';
     $('datePeriodFilter').value = 'ALL';
+    $('registrationSort').value = 'NEWEST';
     state.selectedStatusFilter = 'NOT DONE';
     renderRecords();
   });
