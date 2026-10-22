@@ -209,26 +209,17 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .status-count-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 17px; font-weight: 450; }
 .status-count-label { color: #596d78; font-size: 12px; }
 .status-count-card strong { font-size: 22px; font-weight: 450; }
-.registration-analytics-dialog { width: min(1120px, calc(100% - 32px)); max-height: min(90vh, 900px); overflow: auto; }
+.check-dialog.registration-analytics-dialog { width: min(96vw, 1800px) !important; max-width: min(96vw, 1800px) !important; height: auto; max-height: 94vh; overflow: auto; }
 .registration-analytics-content { display: grid; gap: 18px; margin-top: 18px; }
 .registration-analytics-periods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .registration-analytics-section { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fbfdfd; }
 .registration-analytics-section h3 { margin: 0 0 9px; color: #425969; font-size: 12px; font-weight: 450; }
 .registration-analytics-list { display: grid; gap: 7px; }
-.registration-analytics-row { display: flex; width: 100%; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: #526771; font: inherit; text-align: left; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.registration-analytics-row { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: #526771; font: inherit; text-align: left; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.registration-analytics-row span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .registration-analytics-row:hover, .registration-analytics-row:focus-visible { transform: translateY(-1px); border-color: #8bbcb5; outline: none; }
 .registration-analytics-row.active { border-color: #65a49b; background: #eaf6f3; color: #175d56; }
 .registration-analytics-row span:last-child { min-width: 24px; color: var(--ink); text-align: right; }
-.registration-analytics-records { padding-top: 14px; border-top: 1px solid var(--line); }
-.registration-analytics-records-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.registration-analytics-records-heading h3 { margin: 0; font-size: 14px; font-weight: 450; }
-.registration-analytics-records-heading > span { color: var(--muted); font-size: 11px; }
-.registration-analytics-record-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 32vh; overflow: auto; }
-.registration-analytics-record { display: grid; min-width: 0; gap: 4px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); text-align: left; transition: border-color .15s ease, background .15s ease; }
-.registration-analytics-record:hover, .registration-analytics-record:focus-visible { border-color: #8bbcb5; background: #f2faf8; outline: none; }
-.registration-analytics-record strong { overflow-wrap: anywhere; }
-.registration-analytics-record span, .registration-analytics-record small { color: var(--muted); font-size: 10px; }
-.registration-analytics-empty { margin: 0; padding: 18px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); text-align: center; }
 .table-filters { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(170px, 1fr) minmax(170px, 1fr) auto; align-items: end; gap: 10px; margin: 0 0 14px; }
 .table-filter-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .table-filter-actions .toolbar-icon-only { flex: 0 0 42px; }
@@ -445,8 +436,8 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .status-count-icon { width: 29px; height: 29px; }
   .status-count-label { font-size: 10px; }
   .status-count-card strong { font-size: 19px; }
-  .registration-analytics-dialog { width: calc(100% - 16px); max-height: 96vh; padding: 18px 12px; }
-  .registration-analytics-periods, .registration-analytics-record-grid { grid-template-columns: 1fr; }
+  .check-dialog.registration-analytics-dialog { width: calc(100vw - 16px) !important; max-width: calc(100vw - 16px) !important; max-height: 96vh; padding: 18px 12px; }
+  .registration-analytics-periods { grid-template-columns: 1fr; }
   .table-filters { grid-template-columns: 1fr; }
   .table-filter-actions { flex-wrap: wrap; }
   .table-filter-actions .button:not(.toolbar-icon-only):not(.icon-only-action) { flex: 1; }

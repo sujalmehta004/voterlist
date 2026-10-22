@@ -653,14 +653,6 @@ function registrationAnalyticsPeriods(now) {
   ];
 }
 
-function recordMatchesRegistrationPeriod(record, period) {
-  const parts = registrationDateParts(record.createdAt);
-  if (!parts || parts.year !== period.year) return false;
-  if (period.type === 'year') return true;
-  if (parts.month !== period.month) return false;
-  return period.type === 'month' || parts.day === period.day;
-}
-
 function renderRegistrationAnalytics() {
   const now = new Date();
   const periodGroups = registrationAnalyticsPeriods(now);
@@ -669,9 +661,6 @@ function renderRegistrationAnalytics() {
     state.registrationAnalyticsPeriod = `day:${localDateKey(now)}`;
   }
   const selectedPeriod = allPeriods.find((period) => period.key === state.registrationAnalyticsPeriod);
-  const matchingRecords = state.records
-    .filter((record) => recordMatchesRegistrationPeriod(record, selectedPeriod))
-    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
   $('registrationAnalyticsContent').innerHTML = `
     <div class="registration-analytics-periods">
       ${periodGroups.map((group) => `
@@ -692,34 +681,11 @@ function renderRegistrationAnalytics() {
         </section>
       `).join('')}
     </div>
-    <section class="registration-analytics-records">
-      <div class="registration-analytics-records-heading">
-        <h3>${escapeHtml(selectedPeriod.label)}</h3>
-        <span>${matchingRecords.length} ${matchingRecords.length === 1 ? 'record' : 'records'}</span>
-      </div>
-      ${matchingRecords.length ? `
-        <div class="registration-analytics-record-grid">
-          ${matchingRecords.map((record) => `<button class="registration-analytics-record" type="button" data-registration-record="${escapeHtml(record._id)}">
-            <strong>${escapeHtml(record.fullName)}</strong>
-            <span>${escapeHtml(record.nin)}</span>
-            <small>${escapeHtml(new Date(record.createdAt).toLocaleDateString())}</small>
-          </button>`).join('')}
-        </div>
-      ` : '<p class="registration-analytics-empty">No registrations for this period.</p>'}
-    </section>
   `;
   $('registrationAnalyticsContent').querySelectorAll('[data-registration-period]').forEach((button) => {
     button.addEventListener('click', () => {
       state.registrationAnalyticsPeriod = button.dataset.registrationPeriod;
       renderRegistrationAnalytics();
-    });
-  });
-  $('registrationAnalyticsContent').querySelectorAll('[data-registration-record]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const record = state.records.find((item) => item._id === button.dataset.registrationRecord);
-      if (!record) return;
-      $('registrationAnalyticsDialog').close();
-      openRecordDetails(record);
     });
   });
 }
