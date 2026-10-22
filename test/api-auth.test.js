@@ -108,6 +108,39 @@ test('auth status reports unauthenticated without connecting to the database', a
   assert.deepEqual(response.body, { authenticated: false });
 });
 
+test('login reports missing deployment configuration without attempting database access', async () => {
+  const previousMongoUri = process.env.MONGODB_URI;
+  const previousSessionSecret = process.env.VOTERLIST_SESSION_SECRET;
+  process.env.MONGODB_URI = 'mongodb://unused.example/test';
+  delete process.env.VOTERLIST_SESSION_SECRET;
+  try {
+    const missingSessionSecret = await invoke(authApi, {
+      method: 'POST',
+      url: '/api/auth',
+      headers: {},
+      body: { password: 'admin-password' },
+    });
+    assert.equal(missingSessionSecret.statusCode, 503);
+    assert.match(missingSessionSecret.body.error, /VOTERLIST_SESSION_SECRET/);
+
+    process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+    delete process.env.MONGODB_URI;
+    const missingMongoUri = await invoke(authApi, {
+      method: 'POST',
+      url: '/api/auth',
+      headers: {},
+      body: { password: 'admin-password' },
+    });
+    assert.equal(missingMongoUri.statusCode, 503);
+    assert.match(missingMongoUri.body.error, /database access is not configured/i);
+  } finally {
+    if (previousMongoUri === undefined) delete process.env.MONGODB_URI;
+    else process.env.MONGODB_URI = previousMongoUri;
+    if (previousSessionSecret === undefined) delete process.env.VOTERLIST_SESSION_SECRET;
+    else process.env.VOTERLIST_SESSION_SECRET = previousSessionSecret;
+  }
+});
+
 test('password changes require matching valid new-password fields', async () => {
   process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
   const cookieResponse = mockResponse();

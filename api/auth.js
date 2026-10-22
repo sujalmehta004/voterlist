@@ -57,6 +57,14 @@ module.exports = async function auth(req, res) {
     const body = await readJsonBody(req);
     const password = String(body.password || '');
     if (!password) return sendJson(res, 400, { error: 'Enter the admin password.' });
+    if (!process.env.MONGODB_URI) {
+      return sendJson(res, 503, { error: 'Database access is not configured for this deployment.' });
+    }
+    if (!process.env.VOTERLIST_SESSION_SECRET || process.env.VOTERLIST_SESSION_SECRET.length < 32) {
+      return sendJson(res, 503, {
+        error: 'Authentication is not configured. Set VOTERLIST_SESSION_SECRET to at least 32 characters.',
+      });
+    }
 
     await connectToDatabase();
     const config = await Config.findOne({ key: 'default' }).select('adminUnlockPassword').lean();
