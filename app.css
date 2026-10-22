@@ -93,16 +93,39 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .button.subtle:hover { background: #f5f9f9; }
 .button.full { width: 100%; }
 .button.tiny { min-height: 30px; padding: 6px 10px; font-size: 11px; }
-.check-all-action { width: 42px; min-width: 42px; height: 38px; padding: 8px; }
-.check-all-action svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.check-all-action.is-checking svg { animation: check-mark-pulse .8s ease-in-out infinite; }
+.toolbar-tool-action { flex: 0 0 auto; gap: 8px; justify-content: center; padding: 8px 12px; white-space: nowrap; }
+.toolbar-tool-action svg { width: 20px; height: 20px; min-width: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.toolbar-tool-label { max-width: none; overflow: visible; opacity: 1; }
+.print-tool-action { color: #fff; background: #1e3a5f; border-color: #162d4b; }
+.backup-tool-action { color: #fff; background: #14532d; border-color: #103f23; }
+.toolbar-tool-action.is-activated { animation: toolbar-tool-pop .38s ease-out; }
+.backup-tool-action.is-working svg { animation: backup-icon-bounce .7s ease-in-out infinite; }
+.print-tool-action.is-working svg { animation: check-spin .8s linear infinite; }
+.clear-filters, .columns-tool-button { transition: none; }
+.clear-filters { color: #a34b18; background: linear-gradient(135deg, #fff0df, #fff8ef); border-color: #f2c59e; }
+.clear-filters:hover, .clear-filters:focus-visible { color: #843a10; background: linear-gradient(135deg, #ffe4c7, #fff1e1); }
+.columns-tool-button { color: #285ea8; background: linear-gradient(135deg, #e6f1ff, #f4f8ff); border-color: #c1d7f5; }
+.columns-tool-button:hover, .columns-tool-button:focus-visible { color: #1d4a87; background: linear-gradient(135deg, #d6e8ff, #ebf3ff); }
+.check-all-action { position: relative; isolation: isolate; flex: 0 0 auto; width: auto; min-width: 0; height: 38px; gap: 8px; justify-content: center; padding: 8px 12px; overflow: visible; color: #fff; background: #4c1d95; border-color: #3b1674; white-space: nowrap; }
+.check-all-action svg { width: 20px; height: 20px; min-width: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.check-all-action .toolbar-tool-label { max-width: none; overflow: visible; opacity: 1; }
+.check-all-action.is-activated { animation: toolbar-tool-pop .38s ease-out; }
+.check-all-action.is-checking { animation: check-all-glow 1.6s ease-in-out infinite; }
+.check-all-action.is-checking::after { position: absolute; z-index: -1; inset: -4px; border: 2px solid rgba(124, 58, 237, .34); border-radius: 13px; content: ""; animation: check-all-ring 1.6s ease-out infinite; }
+.check-all-action.is-checking.is-backgrounded::after { inset: 3px; border: 2px solid transparent; border-top-color: #7c3aed; border-right-color: #b879ff; border-radius: 50%; animation: check-spin .85s linear infinite; }
+.check-all-action.is-checking svg { animation: check-mark-pulse 1.2s ease-in-out infinite; }
+.check-all-action.is-checking.is-activated { animation: toolbar-tool-pop .38s ease-out, check-all-glow 1.6s ease-in-out infinite; }
 .check-record-action { width: 104px; min-width: 104px; gap: 7px; white-space: nowrap; }
 .check-record-action svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .check-record-action.is-checking svg { animation: check-spin .8s linear infinite; }
 .print-record-action { min-width: 76px; gap: 6px; white-space: nowrap; }
 .print-record-action svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 @keyframes check-spin { to { transform: rotate(360deg); } }
-@keyframes check-mark-pulse { 50% { transform: scale(.78); opacity: .55; } }
+@keyframes check-mark-pulse { 0%, 100% { transform: scale(.9); opacity: .82; } 50% { transform: scale(1.08); opacity: 1; } }
+@keyframes check-all-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, .22); } 50% { box-shadow: 0 0 0 5px rgba(124, 58, 237, .14), 0 0 18px rgba(124, 58, 237, .28); } }
+@keyframes check-all-ring { 0% { transform: scale(.82); opacity: .75; } 100% { transform: scale(1.35); opacity: 0; } }
+@keyframes toolbar-tool-pop { 45% { transform: translateY(-2px) scale(1.06); box-shadow: 0 6px 16px rgba(23, 43, 58, .2); } }
+@keyframes backup-icon-bounce { 50% { transform: translateY(-2px); } }
 .topbar {
   min-height: 64px;
   display: flex;
@@ -215,8 +238,12 @@ tr:last-child td { border-bottom: 0; }
 .icon-action svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (prefers-reduced-motion: reduce) {
-  .check-all-action.is-checking svg, .check-record-action.is-checking svg { animation-duration: 2s; }
-  .status-count-card, .button { transition-duration: .01ms; }
+  .check-all-action.is-checking, .check-all-action.is-checking::after, .check-all-action.is-checking svg,
+  .check-record-action.is-checking svg, .toolbar-tool-action.is-activated,
+  .toolbar-tool-action.is-working svg { animation: none; }
+  .check-all-action.is-checking { box-shadow: 0 0 0 3px rgba(124, 58, 237, .18); }
+  .check-all-action.is-checking::after { display: none; }
+  .status-count-card, .button, .toolbar-tool-label, .check-all-action .toolbar-tool-label { transition-duration: .01ms; }
 }
 .record-details-dialog { position: fixed; width: min(820px, calc(100% - 32px)); max-height: min(90vh, 860px); overflow: auto; padding: 26px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); box-shadow: 0 24px 80px rgba(23, 43, 58, .24); }
 .record-details-dialog::backdrop { background: rgba(18, 37, 46, .48); backdrop-filter: blur(3px); }
@@ -367,7 +394,10 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .section-heading { flex-direction: column; }
   .heading-actions { width: 100%; }
   .heading-actions .button { flex: 1; }
-  .heading-actions .check-all-action { flex: 0 0 42px; }
+  .heading-actions .toolbar-tool-action { flex: 1; justify-content: center; gap: 7px; }
+  .heading-actions .toolbar-tool-label { max-width: none; opacity: 1; }
+  .heading-actions .check-all-action { flex: 1; justify-content: center; gap: 7px; }
+  .heading-actions .check-all-action .toolbar-tool-label { max-width: none; opacity: 1; }
   .form-actions { align-items: stretch; flex-direction: column; }
   .update-confirmation { width: 100%; }
   .record-modal-grid { grid-template-columns: 1fr; }
@@ -434,19 +464,4 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .print-contacts { display: flex; align-items: center; gap: 4mm; color: #31494b; font-size: 7pt; font-weight: 600; white-space: nowrap; }
   .print-whatsapp { display: inline-flex; align-items: center; gap: 1mm; }
   .print-whatsapp svg { width: 3.5mm; height: 3.5mm; fill: none; stroke: #00c853; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .bulk-print-page { display: flex; height: 270mm; max-height: none; flex-direction: column; gap: 2mm; }
-  .compact-print-card { display: flex; min-height: 0; flex: 1; flex-direction: column; justify-content: space-between; padding: 1.5mm 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-  .compact-print-card .print-main { grid-template-columns: minmax(0, 1fr) 30mm; gap: 2mm; padding-bottom: 1mm; }
-  .compact-print-card .print-person h1 { margin-bottom: 1mm; font-size: 10pt; }
-  .compact-print-card .print-qr { width: 30mm; height: 30mm; padding: .5mm; }
-  .compact-print-card .print-qr img, .compact-print-card .print-qr canvas { width: 28mm !important; height: 28mm !important; }
-  .compact-print-card .print-fields { gap: .6mm 1mm; }
-  .compact-print-card .print-field { padding: .5mm .8mm; }
-  .compact-print-card .print-field span { margin-bottom: 0; font-size: 4.2pt; }
-  .compact-print-card .print-field strong { font-size: 5.2pt; }
-  .compact-print-card .print-note { gap: 0; margin: .7mm 0; padding-left: 3mm; font-size: 4.5pt; line-height: 1.15; }
-  .compact-print-card .print-footer { flex-direction: row; justify-content: space-between; gap: 1mm; padding: .7mm 1mm; }
-  .compact-print-card .print-footer > strong { font-size: 6pt; }
-  .compact-print-card .print-contacts { gap: 2mm; font-size: 5.5pt; }
-  .compact-print-card .print-whatsapp svg { width: 2.5mm; height: 2.5mm; }
 }

@@ -51,9 +51,6 @@ module.exports = async function checkStatus(req, res) {
     await connectToDatabase();
     const record = await VoterlistData.findOne({ nin });
     if (!record) return sendJson(res, 404, { error: 'Create the voterlist record before checking its status.' });
-    if (record.status === 'DONE') {
-      return sendJson(res, 409, { error: 'This record is already DONE and cannot be checked again.', record });
-    }
     if (record.dobAd !== dobAd
       || firstNameFromFullName(record.fullName).toLocaleLowerCase() !== firstname.toLocaleLowerCase()) {
       return sendJson(res, 400, { error: 'The DOB and first name must match the saved voterlist record.' });
@@ -75,7 +72,7 @@ module.exports = async function checkStatus(req, res) {
     const abedanNumber = serverUnavailable ? record.abedanNumber : identifiers.abedanNumber;
 
     const updated = await VoterlistData.findOneAndUpdate(
-      { _id: record._id, status: { $ne: 'DONE' } },
+      { _id: record._id },
       {
         $set: {
           status,
@@ -87,8 +84,7 @@ module.exports = async function checkStatus(req, res) {
       { new: true, runValidators: true, strict: false },
     );
     if (!updated) {
-      const latest = await VoterlistData.findById(record._id).lean();
-      return sendJson(res, 409, { error: 'Record status changed while checking; DONE records are not rechecked.', record: latest });
+      return sendJson(res, 404, { error: 'The voterlist record no longer exists.' });
     }
     const fullResponse = {
       httpStatus: search.statusCode,

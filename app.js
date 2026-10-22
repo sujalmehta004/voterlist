@@ -2,6 +2,9 @@ const state = {
   records: [],
   currentTab: 'entry',
   checkingAll: false,
+  stopBatchRequested: false,
+  batchRunPromise: null,
+  refreshingRecords: false,
   savedRecord: null,
   recordsLoaded: false,
   editingRecordId: null,
@@ -62,22 +65,31 @@ async function handlePasswordChange(event) {
 }
 
 async function softRefresh() {
-  if (state.checkingAll) {
-    showToast('Wait for the current status checks to finish before refreshing.', true);
-    return;
-  }
-  resetRecordForm();
-  $('recordsSearch').value = '';
-  $('datePeriodFilter').value = 'ALL';
-  $('registrationSort').value = 'NEWEST';
-  state.selectedStatusFilter = 'NOT DONE';
-  $('checkAllDialog').close();
-  $('settingsDialog').close();
-  $('savedRecordDialog').close();
-  $('recordDetailsDialog').close();
-  const loaded = await loadRecords({ force: true });
-  if (loaded) {
-    showToast('Records synced. Forms, searches, and filters have been cleared.');
+  if (state.refreshingRecords) return;
+  state.refreshingRecords = true;
+  try {
+    if (state.checkingAll) {
+      state.stopBatchRequested = true;
+      $('checkAllButton').disabled = true;
+      showToast('Stopping status checks before syncing records…');
+      await state.batchRunPromise;
+    }
+    resetRecordForm();
+    $('recordsSearch').value = '';
+    $('datePeriodFilter').value = 'ALL';
+    $('registrationSort').value = 'NEWEST';
+    state.selectedStatusFilter = 'NOT DONE';
+    $('checkAllDialog').close();
+    $('settingsDialog').close();
+    $('savedRecordDialog').close();
+    $('recordDetailsDialog').close();
+    const loaded = await loadRecords({ force: true });
+    if (loaded) {
+      showToast('Records synced. Forms, searches, and filters have been cleared.');
+    }
+  } finally {
+    state.stopBatchRequested = false;
+    state.refreshingRecords = false;
   }
 }
 
@@ -702,7 +714,7 @@ function renderRecords() {
         <td data-record-column="registered">${escapeHtml(formatBsDate(record.createdAt))} BS <span class="subline">${escapeHtml(daysSince(record.createdAt))}</span></td>
         <td data-record-column="updated">${escapeHtml(formatBsDate(record.updatedAt))} BS <span class="subline">${escapeHtml(daysSince(record.updatedAt))}</span></td>
         <td class="row-actions" data-record-column="actions">
-          ${recordStatus(record) !== 'DONE' ? `<button class="button primary tiny check-record-action" type="button" data-check="${escapeHtml(record._id)}" aria-label="Check status for ${escapeHtml(record.fullName)}" title="Check status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg><span>Check</span></button>` : ''}
+          <button class="button primary tiny check-record-action" type="button" data-check="${escapeHtml(record._id)}" aria-label="Check status for ${escapeHtml(record.fullName)}" title="Check status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg><span>Check</span></button>
           <button class="button subtle tiny print-record-action" type="button" data-print="${escapeHtml(record._id)}" aria-label="Print A4 sheet for ${escapeHtml(record.fullName)}" title="Print A4"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/><path d="M17 11h.01"/></svg><span>Print</span></button>
         </td>
       </tr>
@@ -871,15 +883,17 @@ function isVoterServerUnavailableResponse(result) {
   return result.retryable === true;
 }
 
-async function checkStatusWithRetries(details, onRetry = () => {}) {
+async function checkStatusWithRetries(details, onRetry = () => {}, shouldStop = () => false) {
   for (let attempt = 0; attempt <= AUTOMATIC_STATUS_RETRIES; attempt += 1) {
+    let lastResult;
     try {
       const result = await checkStatus(details);
-      if (!isVoterServerUnavailableResponse(result) || attempt === AUTOMATIC_STATUS_RETRIES) {
+      lastResult = result;
+      if (!isVoterServerUnavailableResponse(result) || attempt === AUTOMATIC_STATUS_RETRIES || shouldStop()) {
         return result;
       }
     } catch (error) {
-      if (!isRetryableStatusCheckError(error) || attempt === AUTOMATIC_STATUS_RETRIES) {
+      if (!isRetryableStatusCheckError(error) || attempt === AUTOMATIC_STATUS_RETRIES || shouldStop()) {
         throw error;
       }
     }
@@ -887,6 +901,7 @@ async function checkStatusWithRetries(details, onRetry = () => {}) {
     const retryNumber = attempt + 1;
     onRetry(retryNumber);
     await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * retryNumber));
+    if (shouldStop()) return lastResult;
   }
   throw new Error('Status check retry limit was reached unexpectedly.');
 }
@@ -1096,8 +1111,13 @@ function updateCheckAllDialog() {
 async function runBatchChecks(records) {
   if (!records.length || state.checkingAll) return;
   state.checkingAll = true;
+  state.stopBatchRequested = false;
   $('checkAllButton').disabled = false;
   $('checkAllButton').classList.add('is-checking');
+  $('checkAllButton').classList.remove('is-backgrounded');
+  $('checkAllButton').setAttribute('aria-label', 'Checking all unfinished records; click to view progress');
+  $('checkAllButton').title = 'Checking all unfinished records';
+  $('checkAllButton').querySelector('.toolbar-tool-label').textContent = 'Checking…';
   $('checkAllButton').setAttribute('aria-busy', 'true');
   $('checkAllProgress').max = records.length;
   $('checkAllProgress').value = 0;
@@ -1109,7 +1129,12 @@ async function runBatchChecks(records) {
   $('checkAllDialog').querySelector('.dialog-close').disabled = false;
   let checked = 0;
   let failed = 0;
+  let remaining = 0;
   for (const record of records) {
+    if (state.stopBatchRequested) {
+      remaining = records.length - checked - failed;
+      break;
+    }
     const resultEntry = state.batchResults.find((item) => item.record._id === record._id);
     if (resultEntry) {
       resultEntry.response = { message: 'Waiting for voterlist server response…' };
@@ -1130,7 +1155,7 @@ async function runBatchChecks(records) {
           $('checkAllProgressText').textContent = `Retrying ${record.fullName} (${retryNumber}/${AUTOMATIC_STATUS_RETRIES})…`;
           renderBatchResults();
         }
-      });
+      }, () => state.stopBatchRequested);
       const updatedRecord = { ...result.record, statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1 };
       state.records = state.records.map((item) => item._id === updatedRecord._id ? updatedRecord : item);
       state.recordsLoaded = true;
@@ -1162,16 +1187,25 @@ async function runBatchChecks(records) {
   $('checkAllDialog').querySelector('.dialog-close').disabled = false;
   $('checkAllButton').disabled = false;
   $('checkAllButton').classList.remove('is-checking');
+  $('checkAllButton').classList.remove('is-backgrounded');
+  $('checkAllButton').setAttribute('aria-label', 'Check all unfinished records');
+  $('checkAllButton').title = 'Check all unfinished records';
+  $('checkAllButton').querySelector('.toolbar-tool-label').textContent = 'Check all';
   $('checkAllButton').removeAttribute('aria-busy');
   renderRecords();
-  showToast(`Check all complete: ${checked} checked, ${failed} failed.`, failed > 0);
+  if (remaining) {
+    $('checkAllProgressText').textContent = `Stopped: ${checked} checked, ${failed} failed, ${remaining} remaining.`;
+    if (!state.refreshingRecords) showToast(`Check all stopped: ${checked} checked, ${remaining} remaining.`);
+  } else {
+    showToast(`Check all complete: ${checked} checked, ${failed} failed.`, failed > 0);
+  }
 }
 
 function verificationUrl(record) {
   return `https://voterlist.sujalmehta.com.np/verify/${encodeURIComponent(record.qrToken)}`;
 }
 
-function printCardMarkup(record, index, compact) {
+function printCardMarkup(record, index) {
   const fields = [
     ['NID / NIN', record.nin],
     ['Date of birth (AD)', record.dobAd],
@@ -1180,7 +1214,7 @@ function printCardMarkup(record, index, compact) {
     ['Notes', record.notes],
   ];
   return `
-      <div class="print-card${compact ? ' compact-print-card' : ''}">
+      <div class="print-card">
         <div class="print-main">
           <div class="print-person">
             <p class="print-eyebrow">VOTERLIST FORM RECORD</p>
@@ -1220,18 +1254,9 @@ function printRecords(records) {
   }
   if (!records.length) return;
   const printSheet = $('printSheet');
-  const recordsPerPage = records.length > 1 ? 3 : 1;
-  const pages = [];
-  for (let start = 0; start < records.length; start += recordsPerPage) {
-    const pageRecords = records.slice(start, start + recordsPerPage);
-    const compact = records.length > 1;
-    pages.push(`
-      <div class="print-page${compact ? ' bulk-print-page' : ''}">
-        ${pageRecords.map((record, offset) => printCardMarkup(record, start + offset, compact)).join('')}
-      </div>
-    `);
-  }
-  printSheet.innerHTML = pages.join('');
+  printSheet.innerHTML = records.map((record, index) => `
+    <div class="print-page">${printCardMarkup(record, index)}</div>
+  `).join('');
   records.forEach((record, index) => {
     const qrContainer = printSheet.querySelector(`[data-print-qr="${index}"]`);
     new window.QRCode(qrContainer, {
@@ -1280,6 +1305,50 @@ function openMultiplePrintDialog() {
   $('multiplePrintDialog').showModal();
 }
 
+function animateToolbarAction(button) {
+  button.classList.remove('is-activated');
+  void button.offsetWidth;
+  button.classList.add('is-activated');
+  window.setTimeout(() => button.classList.remove('is-activated'), 400);
+}
+
+async function backupRecords() {
+  const button = $('backupRecordsButton');
+  animateToolbarAction(button);
+  button.disabled = true;
+  button.classList.add('is-working');
+  try {
+    if (!await loadRecords({ force: true })) return;
+    const exportedAt = new Date();
+    const backup = {
+      application: 'Voterlist System',
+      formatVersion: 1,
+      exportedAt: exportedAt.toISOString(),
+      recordCount: state.records.length,
+      records: state.records,
+    };
+    const blob = new Blob([`${JSON.stringify(backup, null, 2)}\n`], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `voterlist-backup-${exportedAt.toISOString().replace(/[:.]/g, '-')}.json`;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`Downloaded JSON backup with ${state.records.length} records.`);
+  } catch (error) {
+    console.error('Could not download voterlist backup:', error);
+    showToast('Could not create the JSON backup. Please try again.', true);
+  } finally {
+    button.disabled = false;
+    button.classList.remove('is-working');
+  }
+}
+
 function renderPublicRecord(record) {
   const status = recordStatus(record);
   const number = recordNumber(record);
@@ -1295,7 +1364,9 @@ function renderPublicRecord(record) {
     <p>${statusPill(status)}</p>
     <div class="verify-status-message verify-status-${status.toLowerCase().replace(/\s+/g, '-')}" role="status">
       <strong>${escapeHtml(statusMessage)}</strong>
-      ${status === 'PENDING' || status === 'DONE' ? '<span>सम्पर्क: 9842101229</span>' : ''}
+      ${status === 'PENDING'
+        ? '<span>सम्पर्क: 9842101229</span><span>WhatsApp: 9804090881</span>'
+        : status === 'DONE' ? '<span>सम्पर्क: 9842101229</span>' : ''}
     </div>
     <div class="verify-fields">
       <div class="verify-field"><span>NID / NIN</span><strong>${escapeHtml(record.nin)}</strong></div>
@@ -1406,7 +1477,11 @@ async function initializeApp() {
   });
   $('recordsSearch').addEventListener('input', renderRecords);
   $('recordColumnsButton').addEventListener('click', openColumnSettings);
-  $('printMultipleButton').addEventListener('click', openMultiplePrintDialog);
+  $('backupRecordsButton').addEventListener('click', () => void backupRecords());
+  $('printMultipleButton').addEventListener('click', () => {
+    animateToolbarAction($('printMultipleButton'));
+    openMultiplePrintDialog();
+  });
   $('selectAllPrintRecords').addEventListener('change', (event) => {
     $('multiplePrintRecords').querySelectorAll('[data-print-select]').forEach((checkbox) => {
       checkbox.checked = event.currentTarget.checked;
@@ -1455,10 +1530,16 @@ async function initializeApp() {
     showToast('Record saved. You can print it later from Records & Status.');
   });
   $('checkAllButton').addEventListener('click', async () => {
+    animateToolbarAction($('checkAllButton'));
     if (state.checkingAll) {
-      if (!$('checkAllDialog').open) $('checkAllDialog').showModal();
+      if (!$('checkAllDialog').open) {
+        $('checkAllButton').classList.remove('is-backgrounded');
+        $('checkAllButton').setAttribute('aria-label', 'Check All is running; open progress');
+        $('checkAllDialog').showModal();
+      }
       return;
     }
+    if (state.refreshingRecords) return;
     const button = $('checkAllButton');
     button.disabled = true;
     button.classList.add('is-checking');
@@ -1466,18 +1547,34 @@ async function initializeApp() {
     try {
       if (!await loadRecords()) return;
       updateCheckAllDialog();
+      button.classList.remove('is-backgrounded');
       $('checkAllDialog').showModal();
-      await runBatchChecks(visiblePendingRecords());
+      const batchPromise = runBatchChecks(visiblePendingRecords());
+      state.batchRunPromise = batchPromise;
+      try {
+        await batchPromise;
+      } finally {
+        if (state.batchRunPromise === batchPromise) state.batchRunPromise = null;
+      }
     } finally {
       if (!state.checkingAll) {
         button.disabled = false;
         button.classList.remove('is-checking');
+        button.setAttribute('aria-label', 'Check all unfinished records');
+        button.title = 'Check all unfinished records';
+        button.querySelector('.toolbar-tool-label').textContent = 'Check all';
         button.removeAttribute('aria-busy');
       }
     }
   });
   $('cancelCheckAllButton').addEventListener('click', () => {
     $('checkAllDialog').close();
+  });
+  $('checkAllDialog').addEventListener('close', () => {
+    if (state.checkingAll) {
+      $('checkAllButton').classList.add('is-backgrounded');
+      $('checkAllButton').setAttribute('aria-label', 'Check All is running in the background; open progress');
+    }
   });
   document.querySelectorAll('.tab[data-tab]').forEach((button) => {
     button.addEventListener('click', () => setTab(button.dataset.tab));

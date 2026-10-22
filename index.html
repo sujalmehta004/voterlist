@@ -99,9 +99,17 @@
               <h2>All records</h2>
             </div>
             <div class="heading-actions">
-              <button id="printMultipleButton" class="button subtle" type="button">Print multiple</button>
-              <button id="checkAllButton" class="button primary check-all-action" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+              <button id="backupRecordsButton" class="button toolbar-tool-action backup-tool-action" type="button" aria-label="Backup JSON" title="Backup JSON">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+                <span class="toolbar-tool-label">Backup JSON</span>
+              </button>
+              <button id="printMultipleButton" class="button toolbar-tool-action print-tool-action" type="button" aria-label="Print multiple" title="Print multiple">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7zM17 11h.01"/></svg>
+                <span class="toolbar-tool-label">Print multiple</span>
+              </button>
+              <button id="checkAllButton" class="button check-all-action" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg>
+                <span class="toolbar-tool-label">Check all</span>
               </button>
             </div>
           </div>
@@ -129,8 +137,8 @@
               </select>
             </div>
             <div class="table-filter-actions">
-              <button id="clearFiltersButton" class="button subtle clear-filters" type="button">Clear filters</button>
-              <button id="recordColumnsButton" class="button subtle" type="button">Columns</button>
+              <button id="clearFiltersButton" class="button clear-filters" type="button">Clear filters</button>
+              <button id="recordColumnsButton" class="button columns-tool-button" type="button">Columns</button>
             </div>
           </div>
           <div id="recordsCountSummary" class="records-count-summary" aria-live="polite"></div>
