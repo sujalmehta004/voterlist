@@ -131,10 +131,19 @@ Stop the development server with Ctrl+C.
 2. In Vercel, create/import a project for this application and select the correct framework/build settings. The repository includes `vercel.json`; the app is served from the project root with functions in `api/`.
 3. Add `MONGODB_URI`, `VOTERLIST_SESSION_SECRET`, and the initial `VOTERLIST_ADMIN_PASSWORD` if needed in **Settings → Environment Variables**. Add them to Production and any Preview environment where the app should work.
 4. Ensure MongoDB network access permits the deployment to connect.
-5. Deploy and verify that the login screen, admin login, records list, and a QR verification link work.
-6. Add `voterlist.sujalmehta.com.np` under the Vercel project's **Settings → Domains**. Apply the DNS record Vercel specifies at your DNS provider, then wait for Vercel to confirm the domain and HTTPS certificate.
+5. In **Settings → Git**, set the **Production Branch** to the branch you deploy (usually `main`). Pushes to that branch should create a new production deployment.
+6. After each push, open **Deployments** and verify the deployment's source commit matches the latest commit on the production branch. A deployment for an older commit does not include later changes.
+7. Deploy and verify that the login screen, admin login, records list, and a QR verification link work.
+8. Add `voterlist.sujalmehta.com.np` under the Vercel project's **Settings → Domains**. Apply the DNS record Vercel specifies at your DNS provider, then wait for Vercel to confirm the domain and HTTPS certificate.
 
 After changing Vercel environment variables, redeploy for the changes to take effect.
+
+### If a Git push does not create a deployment
+
+- Confirm **Settings → Git** connects the intended GitHub repository and that GitHub access to the repository is still authorized.
+- Confirm **Settings → Git** lists the branch you pushed as the **Production Branch**.
+- Check **Deployments** for the pushed commit. If no deployment was created, use **Deploy** to create one from the latest production-branch commit; do not redeploy an older deployment if you need the newest code.
+- If a new deployment fails, open its build logs and resolve the reported build error before retrying.
 
 The app's QR links are currently configured to use `https://voterlist.sujalmehta.com.np`. If you deploy under a different domain, update the `verificationUrl` function in `app.js` before deployment.
 
