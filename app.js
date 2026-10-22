@@ -1,7 +1,7 @@
 const state = {
   records: [],
   currentTab: 'entry',
-  workspaceSettings: { hideEntryTab: false, hideDatabaseTab: false },
+  workspaceSettings: { hideEntryTab: false, hideOldEntryTab: false, hideDatabaseTab: false },
   checkingAll: false,
   stopBatchRequested: false,
   batchRunPromise: null,
@@ -73,14 +73,27 @@ async function handlePasswordChange(event) {
 function isValidWorkspaceSettings(settings) {
   return settings
     && typeof settings.hideEntryTab === 'boolean'
+    && typeof settings.hideOldEntryTab === 'boolean'
     && typeof settings.hideDatabaseTab === 'boolean'
-    && !(settings.hideEntryTab && settings.hideDatabaseTab);
+    && !(settings.hideEntryTab && settings.hideOldEntryTab && settings.hideDatabaseTab);
+}
+
+function normalizeWorkspaceSettings(settings) {
+  if (!settings || typeof settings !== 'object') return null;
+  const normalized = {
+    hideEntryTab: settings.hideEntryTab,
+    hideOldEntryTab: settings.hideOldEntryTab ?? false,
+    hideDatabaseTab: settings.hideDatabaseTab,
+  };
+  return isValidWorkspaceSettings(normalized) ? normalized : null;
 }
 
 function applyWorkspaceSettings() {
   $('hideEntryTab').checked = state.workspaceSettings.hideEntryTab;
+  $('hideOldEntryTab').checked = state.workspaceSettings.hideOldEntryTab;
   $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
   document.querySelector('.tab[data-tab="entry"]').hidden = state.workspaceSettings.hideEntryTab;
+  document.querySelector('.tab[data-tab="old-entry"]').hidden = state.workspaceSettings.hideOldEntryTab;
   document.querySelector('.tab[data-tab="records"]').hidden = state.workspaceSettings.hideDatabaseTab;
   setTab(state.currentTab);
 }
@@ -89,8 +102,8 @@ function loadCachedWorkspaceSettings() {
   try {
     const cached = localStorage.getItem(WORKSPACE_SETTINGS_KEY);
     if (!cached) return;
-    const settings = JSON.parse(cached);
-    if (!isValidWorkspaceSettings(settings)) {
+    const settings = normalizeWorkspaceSettings(JSON.parse(cached));
+    if (!settings) {
       localStorage.removeItem(WORKSPACE_SETTINGS_KEY);
       return;
     }
@@ -104,8 +117,9 @@ function loadCachedWorkspaceSettings() {
 
 async function syncWorkspaceSettings() {
   try {
-    const { settings } = await apiRequest('/api/workspace-settings', { cache: 'no-store' });
-    if (!isValidWorkspaceSettings(settings)) {
+    const { settings: savedSettings } = await apiRequest('/api/workspace-settings', { cache: 'no-store' });
+    const settings = normalizeWorkspaceSettings(savedSettings);
+    if (!settings) {
       throw new Error('The saved workspace tab settings are invalid.');
     }
     state.workspaceSettings = settings;
@@ -130,10 +144,11 @@ async function saveWorkspaceSettings(event) {
   const message = $('workspaceSettingsMessage');
   const settings = {
     hideEntryTab: $('hideEntryTab').checked,
+    hideOldEntryTab: $('hideOldEntryTab').checked,
     hideDatabaseTab: $('hideDatabaseTab').checked,
   };
   message.textContent = '';
-  if (settings.hideEntryTab && settings.hideDatabaseTab) {
+  if (settings.hideEntryTab && settings.hideOldEntryTab && settings.hideDatabaseTab) {
     message.textContent = 'At least one workspace tab must remain visible.';
     return;
   }
@@ -144,14 +159,15 @@ async function saveWorkspaceSettings(event) {
       method: 'PUT',
       body: JSON.stringify(settings),
     });
-    if (!isValidWorkspaceSettings(result.settings)) {
+    const savedSettings = normalizeWorkspaceSettings(result.settings);
+    if (!savedSettings) {
       throw new Error('The server returned invalid workspace settings.');
     }
-    state.workspaceSettings = result.settings;
+    state.workspaceSettings = savedSettings;
     applyWorkspaceSettings();
     let cacheWarning = '';
     try {
-      localStorage.setItem(WORKSPACE_SETTINGS_KEY, JSON.stringify(result.settings));
+      localStorage.setItem(WORKSPACE_SETTINGS_KEY, JSON.stringify(savedSettings));
     } catch (error) {
       console.error('Could not cache updated workspace settings:', error);
       cacheWarning = ' Database settings were saved, but this browser could not cache them.';
@@ -178,6 +194,7 @@ async function verifyWorkspaceAdminPassword(event) {
     });
     $('workspacePasswordDialog').close();
     $('hideEntryTab').checked = state.workspaceSettings.hideEntryTab;
+    $('hideOldEntryTab').checked = state.workspaceSettings.hideOldEntryTab;
     $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
     $('workspaceSettingsDialog').showModal();
   } catch (error) {
@@ -483,9 +500,9 @@ function isValidBsDate(value) {
   }
 }
 
-function syncDatePair(source, reportError = false) {
-  const sourceInput = source === 'ad' ? $('dobAd') : $('dobBs');
-  const targetInput = source === 'ad' ? $('dobBs') : $('dobAd');
+function syncDatePair(source, reportError = false, form = $('recordForm')) {
+  const sourceInput = source === 'ad' ? form.elements.dobAd : form.elements.dobBs;
+  const targetInput = source === 'ad' ? form.elements.dobBs : form.elements.dobAd;
   const value = sourceInput.value.trim();
   targetInput.value = '';
   if (!value) return;
@@ -523,7 +540,8 @@ function formatIsoDateInput(input) {
 function setTab(tabName) {
   const requestedButton = document.querySelector(`.tab[data-tab="${tabName}"]`);
   if (!requestedButton || requestedButton.hidden) {
-    tabName = state.workspaceSettings.hideEntryTab ? 'records' : 'entry';
+    tabName = ['entry', 'old-entry', 'records']
+      .find((name) => !document.querySelector(`.tab[data-tab="${name}"]`).hidden) || 'entry';
   }
   state.currentTab = tabName;
   document.querySelectorAll('.tab').forEach((button) => {
@@ -866,7 +884,9 @@ async function openRecordUpdatesHistory() {
 function resetRecordForm() {
   state.editingRecordId = null;
   $('recordForm').reset();
+  $('oldRecordForm').reset();
   $('status').value = 'NOT ONLINE';
+  $('oldStatus').value = 'NOT ONLINE';
   $('status').querySelector('option[value="DONE"]').hidden = true;
   $('recordForm').closest('.simple-form-panel').classList.remove('edit-mode');
   $('simpleFormTitle').textContent = 'New voter record';
@@ -1036,18 +1056,26 @@ async function handleLogin(event) {
   }
 }
 
-async function handleCreateRecord(event) {
+async function handleCreateRecord(event, entryType = 'standard') {
   event.preventDefault();
-  const form = $('recordForm');
-  const button = $('saveRecordButton');
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
   const isEditing = Boolean(state.editingRecordId);
+  if (entryType === 'old' && isEditing) {
+    showToast('Finish or cancel the current record edit before adding an old entry.', true);
+    return;
+  }
   if (isEditing && $('updateConfirmText').value !== 'UPDATE') {
     showToast('Type UPDATE exactly before saving changes.', true);
     return;
   }
   const formData = new FormData(form);
-  if (!validIsoDate($('dobAd').value) || !isValidBsDate($('dobBs').value)) {
+  if (!validIsoDate(form.elements.dobAd.value) || !isValidBsDate(form.elements.dobBs.value)) {
     showToast('Enter a valid AD or BS date as YYYY-MM-DD. The other date is converted automatically.', true);
+    return;
+  }
+  if (entryType === 'old' && !validIsoDate(form.elements.registeredDate.value)) {
+    showToast('Enter a valid registered date.', true);
     return;
   }
   button.disabled = true;
@@ -1055,7 +1083,8 @@ async function handleCreateRecord(event) {
   try {
     const payload = {
       ...Object.fromEntries(formData.entries()),
-      status: $('status').value,
+      status: form.elements.status.value,
+      ...(entryType === 'old' ? { entryType: 'old' } : {}),
     };
     const result = await apiRequest('/api/records', {
       method: isEditing ? 'PUT' : 'POST',
@@ -1076,7 +1105,7 @@ async function handleCreateRecord(event) {
       resetRecordForm();
     } else {
       form.reset();
-      $('status').value = 'NOT ONLINE';
+      form.elements.status.value = 'NOT ONLINE';
       state.savedRecord = result.record;
       state.records = [result.record, ...state.records.filter((record) => record._id !== result.record._id)];
     }
@@ -1094,7 +1123,7 @@ async function handleCreateRecord(event) {
   } catch (error) {
     showToast(error.message, true);
   } finally {
-    button.disabled = state.editingRecordId
+    button.disabled = entryType === 'standard' && state.editingRecordId
       ? $('updateConfirmText').value !== 'UPDATE'
       : false;
   }
@@ -1711,6 +1740,31 @@ async function showPublicVerification(code) {
   }
 }
 
+function wireRecordEntryForm(form, entryType) {
+  form.addEventListener('submit', (event) => handleCreateRecord(event, entryType));
+  for (const field of ['nin', 'mobile']) {
+    form.elements[field].addEventListener('input', (event) => {
+      event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 10);
+    });
+  }
+  form.elements.fullName.addEventListener('input', (event) => {
+    event.currentTarget.value = event.currentTarget.value.replace(/[^\p{L}\p{M}. ]/gu, '');
+  });
+  form.elements.dobAd.addEventListener('input', (event) => {
+    formatIsoDateInput(event.currentTarget);
+    syncDatePair('ad', false, form);
+  });
+  form.elements.dobBs.addEventListener('input', (event) => {
+    formatIsoDateInput(event.currentTarget);
+    syncDatePair('bs', false, form);
+  });
+  form.elements.dobAd.addEventListener('change', () => syncDatePair('ad', true, form));
+  form.elements.dobBs.addEventListener('change', () => syncDatePair('bs', true, form));
+  if (entryType === 'old') {
+    form.elements.registeredDate.addEventListener('input', (event) => formatIsoDateInput(event.currentTarget));
+  }
+}
+
 async function initializeApp() {
   const url = new URL(window.location.href);
   const routeCode = window.location.pathname.match(/^\/verify\/([^/]+)\/?$/)?.[1];
@@ -1723,16 +1777,8 @@ async function initializeApp() {
   loadRecordColumnPreferences();
   loadCachedWorkspaceSettings();
   $('loginForm').addEventListener('submit', handleLogin);
-  $('recordForm').addEventListener('submit', handleCreateRecord);
-  $('nin').addEventListener('input', (event) => {
-    event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 10);
-  });
-  $('mobile').addEventListener('input', (event) => {
-    event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 10);
-  });
-  $('fullName').addEventListener('input', (event) => {
-    event.currentTarget.value = event.currentTarget.value.replace(/[^\p{L}\p{M}. ]/gu, '');
-  });
+  wireRecordEntryForm($('recordForm'), 'standard');
+  wireRecordEntryForm($('oldRecordForm'), 'old');
   $('updateConfirmText').addEventListener('input', (event) => {
     $('saveRecordButton').disabled = state.editingRecordId
       ? event.currentTarget.value !== 'UPDATE'
@@ -1742,16 +1788,6 @@ async function initializeApp() {
     resetRecordForm();
     setTab('entry');
   });
-  $('dobAd').addEventListener('input', (event) => {
-    formatIsoDateInput(event.currentTarget);
-    syncDatePair('ad');
-  });
-  $('dobBs').addEventListener('input', (event) => {
-    formatIsoDateInput(event.currentTarget);
-    syncDatePair('bs');
-  });
-  $('dobAd').addEventListener('change', () => syncDatePair('ad', true));
-  $('dobBs').addEventListener('change', () => syncDatePair('bs', true));
   $('settingsButton').addEventListener('click', () => {
     $('settingsDialog').showModal();
   });

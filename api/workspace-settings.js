@@ -7,6 +7,7 @@ const { readJsonBody, sendJson } = require('../lib/http');
 function getWorkspaceSettings(config) {
   return {
     hideEntryTab: Boolean(config?.hideEntryTab),
+    hideOldEntryTab: Boolean(config?.hideOldEntryTab),
     hideDatabaseTab: Boolean(config?.hideDatabaseTab),
   };
 }
@@ -28,10 +29,12 @@ module.exports = async function workspaceSettings(req, res) {
       return sendJson(res, 400, { error: 'Enter the admin password to continue.' });
     }
     if (req.method === 'PUT') {
-      if (typeof body.hideEntryTab !== 'boolean' || typeof body.hideDatabaseTab !== 'boolean') {
+      if (typeof body.hideEntryTab !== 'boolean'
+        || typeof body.hideOldEntryTab !== 'boolean'
+        || typeof body.hideDatabaseTab !== 'boolean') {
         return sendJson(res, 400, { error: 'Choose whether to hide each workspace tab.' });
       }
-      if (body.hideEntryTab && body.hideDatabaseTab) {
+      if (body.hideEntryTab && body.hideOldEntryTab && body.hideDatabaseTab) {
         return sendJson(res, 400, { error: 'At least one workspace tab must remain visible.' });
       }
     }
@@ -66,6 +69,7 @@ module.exports = async function workspaceSettings(req, res) {
       {
         $set: {
           hideEntryTab: body.hideEntryTab,
+          hideOldEntryTab: body.hideOldEntryTab,
           hideDatabaseTab: body.hideDatabaseTab,
         },
         $setOnInsert: { key: 'default' },

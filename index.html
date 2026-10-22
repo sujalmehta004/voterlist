@@ -27,6 +27,7 @@
   <main id="appScreen" class="screen hidden">
     <nav class="floating-tabs" aria-label="Voterlist sections">
       <button class="tab active" data-tab="entry" type="button">Entry</button>
+      <button class="tab" data-tab="old-entry" type="button">Old entry</button>
       <button class="tab" data-tab="records" type="button">Records &amp; Status <span id="pendingCount" class="count">0</span></button>
       <button id="settingsButton" class="tab settings-tab" type="button" aria-label="Settings">Settings</button>
     </nav>
@@ -85,6 +86,61 @@
               </div>
               <button id="saveRecordButton" class="button primary" type="submit">Save voter record</button>
               <button id="cancelEditButton" class="button subtle hidden" type="button">Cancel edit</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="tab-old-entry" class="tab-panel hidden">
+        <div class="panel form-panel simple-form-panel">
+          <div class="simple-form-heading">
+            <h2>New old voter record</h2>
+            <span class="muted small-text">Enter the original registration date</span>
+          </div>
+
+          <form id="oldRecordForm" class="form-grid">
+            <div class="field">
+              <label for="oldNin">NID / NIN number <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="oldNin" name="nin" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="off"
+                placeholder="10 digits" required />
+            </div>
+            <div class="field">
+              <label for="oldFullName">Full name <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="oldFullName" name="fullName" type="text" maxlength="160" autocomplete="name" required />
+            </div>
+            <div class="field">
+              <label for="oldDobBs">Date of birth (BS, English digits) <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="oldDobBs" name="dobBs" type="text" inputmode="numeric" maxlength="10"
+                placeholder="YYYY-MM-DD" autocomplete="off" required />
+            </div>
+            <div class="field">
+              <label for="oldDobAd">Date of birth (AD) <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="oldDobAd" name="dobAd" type="text" inputmode="numeric" maxlength="10"
+                placeholder="YYYY-MM-DD" autocomplete="off" required />
+            </div>
+            <div class="field">
+              <label for="oldMobile">Mobile number <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="oldMobile" name="mobile" type="tel" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="tel"
+                placeholder="10 digits" required />
+            </div>
+            <div class="field">
+              <label for="oldStatus">Status <span class="required-mark" aria-hidden="true">*</span></label>
+              <select id="oldStatus" name="status" required>
+                <option value="NOT ONLINE" selected>NOT ONLINE</option>
+                <option value="PENDING">PENDING</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="registeredDate">Registered date <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="registeredDate" name="registeredDate" type="text" inputmode="numeric" maxlength="10"
+                pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" placeholder="YYYY-MM-DD" autocomplete="off" required />
+            </div>
+            <div class="field field-wide">
+              <label for="oldNotes">Notes <span class="muted">(optional)</span></label>
+              <textarea id="oldNotes" name="notes" rows="3" maxlength="2000" placeholder="Optional notes for this record"></textarea>
+            </div>
+            <div class="field-wide form-actions">
+              <button id="saveOldRecordButton" class="button primary" type="submit">Save old voter record</button>
             </div>
           </form>
         </div>
@@ -332,6 +388,10 @@
       <label class="workspace-setting-option">
         <input id="hideEntryTab" type="checkbox" />
         <span>Hide Entry tab</span>
+      </label>
+      <label class="workspace-setting-option">
+        <input id="hideOldEntryTab" type="checkbox" />
+        <span>Hide Old entry tab</span>
       </label>
       <label class="workspace-setting-option">
         <input id="hideDatabaseTab" type="checkbox" />

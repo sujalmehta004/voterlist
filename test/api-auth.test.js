@@ -70,7 +70,7 @@ test('workspace settings require valid visibility values and keep one tab visibl
     method: 'PUT',
     url: '/api/workspace-settings',
     headers: { cookie },
-    body: { hideEntryTab: true, hideDatabaseTab: true },
+    body: { hideEntryTab: true, hideOldEntryTab: true, hideDatabaseTab: true },
   };
 
   const bothHidden = await invoke(workspaceSettingsApi, request);
@@ -79,10 +79,11 @@ test('workspace settings require valid visibility values and keep one tab visibl
 
   const invalidValues = await invoke(workspaceSettingsApi, {
     ...request,
-    body: { hideEntryTab: 'true', hideDatabaseTab: false },
+    body: { hideEntryTab: 'true', hideOldEntryTab: false, hideDatabaseTab: false },
   });
   assert.equal(invalidValues.statusCode, 400);
   assert.match(invalidValues.body.error, /choose whether to hide/i);
+
 });
 
 test('workspace settings password verification requires a password', async () => {

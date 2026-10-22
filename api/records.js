@@ -6,7 +6,11 @@ const VoterlistHistory = require('../lib/models/VoterlistHistory');
 const { saveRecordUpdate } = require('../lib/voterlist-history');
 const { hasValidSession } = require('../lib/auth');
 const { readJsonBody, sendJson } = require('../lib/http');
-const { normalizeNin, isValidFullName, isValidIsoDate } = require('../lib/records');
+const {
+  normalizeNin,
+  isValidFullName,
+  isValidIsoDate,
+} = require('../lib/records');
 
 module.exports = async function records(req, res) {
   if (!hasValidSession(req)) return sendJson(res, 401, { error: 'Sign in to manage records.' });
@@ -54,6 +58,8 @@ module.exports = async function records(req, res) {
     const mobile = String(body.mobile || '').trim();
     const notes = String(body.notes || '').trim();
     const status = String(body.status || 'NOT ONLINE').trim().toUpperCase();
+    const isOldEntry = body.entryType === 'old';
+    const registeredDate = String(body.registeredDate || '').trim();
 
     if (!/^\d{10}$/.test(String(body.nin || ''))) {
       return sendJson(res, 400, { error: 'NIN must contain exactly 10 digits.' });
@@ -70,6 +76,9 @@ module.exports = async function records(req, res) {
       return sendJson(res, 400, { error: 'Mobile number must contain exactly 10 digits.' });
     }
     if (notes.length > 2000) return sendJson(res, 400, { error: 'Notes must be 2,000 characters or fewer.' });
+    if (req.method === 'POST' && isOldEntry && !isValidIsoDate(registeredDate)) {
+      return sendJson(res, 400, { error: 'Enter a valid registration date.' });
+    }
     if (req.method === 'POST' && !['NOT ONLINE', 'PENDING'].includes(status)) {
       return sendJson(res, 400, { error: 'New records can only start as NOT ONLINE or PENDING.' });
     }
@@ -119,7 +128,7 @@ module.exports = async function records(req, res) {
       return sendJson(res, 200, { record: record.toObject() });
     }
 
-    const record = await VoterlistData.create({
+    const recordValues = {
       nin,
       dobAd,
       dobBs,
@@ -128,7 +137,16 @@ module.exports = async function records(req, res) {
       notes,
       status,
       qrToken: crypto.randomBytes(24).toString('base64url'),
-    });
+    };
+    let record;
+    if (isOldEntry) {
+      const [year, month, day] = registeredDate.split('-').map(Number);
+      const createdAt = new Date(Date.UTC(year, month - 1, day, 12));
+      record = new VoterlistData({ ...recordValues, createdAt, updatedAt: new Date() });
+      await record.save({ timestamps: false });
+    } else {
+      record = await VoterlistData.create(recordValues);
+    }
     return sendJson(res, 201, { record });
   } catch (error) {
     if (error.code === 11000) return sendJson(res, 409, { error: 'A record for this NIN already exists.' });
