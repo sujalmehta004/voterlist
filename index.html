@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f766e" />
+  <title>Voterlist System</title>
+  <link rel="stylesheet" href="/app.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/nepali-date-converter/dist/nepali-date-converter.umd.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main id="loginScreen" class="screen screen-center">
+    <form id="loginForm" class="panel login-panel">
+      <div class="brand-mark">VS</div>
+      <p class="eyebrow">PRIVATE WORKSPACE</p>
+      <h1>Voterlist System</h1>
+      <p class="muted">Sign in with the administrator password to continue.</p>
+      <label for="loginPassword">Admin password</label>
+      <input id="loginPassword" name="password" type="password" autocomplete="current-password" required />
+      <button class="button primary full" type="submit">Sign in</button>
+      <p id="loginMessage" class="message" role="status"></p>
+    </form>
+  </main>
+
+  <main id="appScreen" class="screen hidden">
+    <nav class="floating-tabs" aria-label="Voterlist sections">
+      <button class="tab active" data-tab="entry" type="button">Entry</button>
+      <button class="tab" data-tab="records" type="button">Records &amp; Status <span id="pendingCount" class="count">0</span></button>
+      <button id="settingsButton" class="tab settings-tab" type="button" aria-label="Settings">Settings</button>
+    </nav>
+
+    <div class="content">
+      <p id="appMessage" class="toast hidden" role="status"></p>
+
+      <section id="tab-entry" class="tab-panel">
+        <div class="panel form-panel simple-form-panel">
+          <div class="simple-form-heading">
+            <h2 id="simpleFormTitle">New voter record</h2>
+            <span class="muted small-text">Status starts as NOT ONLINE</span>
+          </div>
+
+          <form id="recordForm" class="form-grid">
+            <div class="field">
+              <label for="nin">NID / NIN number <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="nin" name="nin" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="off"
+                placeholder="10 digits" required />
+            </div>
+            <div class="field">
+              <label for="fullName">Full name <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="fullName" name="fullName" type="text" maxlength="160" autocomplete="name" required />
+            </div>
+            <div class="field">
+              <label for="dobBs">Date of birth (BS, English digits) <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="dobBs" name="dobBs" type="text" inputmode="numeric" maxlength="10"
+                placeholder="YYYY-MM-DD" autocomplete="off" required />
+            </div>
+            <div class="field">
+              <label for="dobAd">Date of birth (AD) <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="dobAd" name="dobAd" type="text" inputmode="numeric" maxlength="10"
+                placeholder="YYYY-MM-DD" autocomplete="off" required />
+            </div>
+            <div class="field">
+              <label for="mobile">Mobile number <span class="required-mark" aria-hidden="true">*</span></label>
+              <input id="mobile" name="mobile" type="tel" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="tel"
+                placeholder="10 digits" required />
+            </div>
+            <div class="field">
+              <label for="status">Status <span class="required-mark" aria-hidden="true">*</span></label>
+              <select id="status" name="status" required>
+                <option value="NOT ONLINE" selected>NOT ONLINE</option>
+                <option value="PENDING">PENDING</option>
+                <option value="DONE" hidden>DONE</option>
+              </select>
+            </div>
+            <div class="field field-wide">
+              <label for="notes">Notes <span class="muted">(optional)</span></label>
+              <textarea id="notes" name="notes" rows="3" maxlength="2000" placeholder="Optional notes for this record"></textarea>
+            </div>
+            <div class="field-wide form-actions">
+              <div id="updateConfirmation" class="update-confirmation hidden">
+                <label for="updateConfirmText">Type UPDATE to confirm changes</label>
+                <input id="updateConfirmText" type="text" autocomplete="off" />
+              </div>
+              <button id="saveRecordButton" class="button primary" type="submit">Save voter record</button>
+              <button id="cancelEditButton" class="button subtle hidden" type="button">Cancel edit</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="tab-records" class="tab-panel hidden">
+        <div id="statusCounts" class="status-counts" role="group" aria-label="Filter records by status"></div>
+        <div class="panel table-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">VOTERLIST DATA</p>
+              <h2>All records</h2>
+            </div>
+            <div class="heading-actions">
+              <button id="checkAllButton" class="button primary check-all-action" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="table-filters">
+            <div class="field">
+              <label for="recordsSearch">Search records</label>
+              <input id="recordsSearch" type="search" placeholder="Name, NIN, mobile, or number" />
+            </div>
+            <div class="field">
+              <label for="datePeriodFilter">Registration date</label>
+              <select id="datePeriodFilter">
+                <option value="ALL">Any date</option>
+                <option value="TODAY">Today</option>
+                <option value="YESTERDAY">Yesterday</option>
+                <option value="THIS_WEEK">This week</option>
+                <option value="THIS_MONTH">This month</option>
+                <option value="THIS_YEAR">This year</option>
+              </select>
+            </div>
+            <div class="table-filter-actions">
+              <button id="clearFiltersButton" class="button subtle clear-filters" type="button">Clear filters</button>
+              <button id="recordColumnsButton" class="button subtle" type="button">Columns</button>
+            </div>
+          </div>
+          <div id="recordsCountSummary" class="records-count-summary" aria-live="polite"></div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr>
+                <th data-record-column="name">Name</th>
+                <th data-record-column="nin">NIN</th>
+                <th data-record-column="mobile">Mobile</th>
+                <th data-record-column="status">Status</th>
+                <th data-record-column="number">Voter-list / Abedan No.</th>
+                <th data-record-column="registered">Registered</th>
+                <th data-record-column="updated">Updated</th>
+                <th data-record-column="actions">Actions</th>
+              </tr></thead>
+              <tbody id="recordsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="checkAllDialog" class="check-dialog batch-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <h2 id="checkAllTitle">Check unfinished records</h2>
+    <progress id="checkAllProgress" class="hidden" max="1" value="0"></progress>
+    <p id="checkAllProgressText" class="small-text muted"></p>
+    <div id="batchResults" class="batch-results hidden"></div>
+    <div class="dialog-actions">
+      <button id="cancelCheckAllButton" class="button subtle" type="button">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog id="recordColumnsDialog" class="check-dialog columns-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">TABLE DISPLAY</p>
+    <h2>Choose columns</h2>
+    <p class="muted small-text">Select which columns to show in the records table. Your choice is saved on this device.</p>
+    <div id="recordColumnsOptions" class="column-options"></div>
+    <div class="dialog-actions">
+      <button id="cancelColumnSettingsButton" class="button subtle" type="button">Cancel</button>
+      <button id="saveColumnSettingsButton" class="button primary" type="button">Save columns</button>
+    </div>
+  </dialog>
+
+  <dialog id="savedRecordDialog" class="check-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">RECORD SAVED</p>
+    <h2 id="savedRecordTitle">Voter record saved</h2>
+    <p class="muted">Print an A4 verification sheet now, or cancel and print it later from Records.</p>
+    <div class="dialog-actions">
+      <button id="cancelSavedRecordButton" class="button subtle" type="button">Cancel</button>
+      <button id="printSavedRecordButton" class="button primary" type="button">Print A4</button>
+    </div>
+  </dialog>
+
+  <dialog id="recordDetailsDialog" class="record-details-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">VOTER RECORD</p>
+    <h2 id="recordDetailsTitle">Record details</h2>
+    <div id="recordDetailsContent"></div>
+    <section class="record-history-section">
+      <h3>Unique search response messages</h3>
+      <div id="recordResponsesContent" class="response-list"><p class="muted small-text">Loading responses…</p></div>
+    </section>
+    <div class="dialog-actions">
+      <button id="visitRecordQrButton" class="button subtle" type="button">Visit QR link</button>
+      <button id="recordUpdatesButton" class="button subtle" type="button">Updates History</button>
+      <button id="editRecordButton" class="button primary" type="button">Modify record</button>
+      <button id="closeRecordDetailsButton" class="button subtle" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="recordUpdatesDialog" class="record-details-dialog updates-history-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">RECORD CHANGES</p>
+    <h2>Updates History</h2>
+    <div id="recordUpdatesContent" class="updates-history-list"><p class="muted small-text">Loading update history…</p></div>
+    <div class="dialog-actions">
+      <button id="closeRecordUpdatesButton" class="button subtle" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="settingsDialog" class="check-dialog settings-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">ADMIN SETTINGS</p>
+    <h2>Change admin password</h2>
+    <p class="muted">The new password will be saved to the shared database configuration.</p>
+    <form id="passwordForm" class="settings-form">
+      <div class="field">
+        <label for="currentPassword">Current password</label>
+        <div class="password-input-wrap">
+          <input id="currentPassword" type="password" autocomplete="current-password" required />
+          <button class="password-visibility-toggle" type="button" data-password-toggle="currentPassword" aria-label="Show current password" aria-pressed="false" title="Show password">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="eye-outline" d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle class="eye-pupil" cx="12" cy="12" r="2.7"/><path class="eye-slash" d="m4 4 16 16"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="newPassword">New password</label>
+        <div class="password-input-wrap">
+          <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required />
+          <button class="password-visibility-toggle" type="button" data-password-toggle="newPassword" aria-label="Show new password" aria-pressed="false" title="Show password">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="eye-outline" d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle class="eye-pupil" cx="12" cy="12" r="2.7"/><path class="eye-slash" d="m4 4 16 16"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="confirmPassword">Confirm new password</label>
+        <div class="password-input-wrap">
+          <input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" required />
+          <button class="password-visibility-toggle" type="button" data-password-toggle="confirmPassword" aria-label="Show confirm new password" aria-pressed="false" title="Show password">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="eye-outline" d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle class="eye-pupil" cx="12" cy="12" r="2.7"/><path class="eye-slash" d="m4 4 16 16"/></svg>
+          </button>
+        </div>
+      </div>
+      <p id="passwordMessage" class="message" role="status"></p>
+      <div class="dialog-actions">
+        <button id="cancelSettingsButton" class="button subtle" type="button">Cancel</button>
+        <button id="savePasswordButton" class="button primary" type="submit">Update password</button>
+      </div>
+    </form>
+  </dialog>
+
+  <main id="verifyScreen" class="screen hidden">
+    <header class="topbar verify-topbar">
+      <div class="brand">
+        <div class="brand-mark small">VS</div>
+        <div><strong>Voterlist Verification</strong><span>Record details from QR code</span></div>
+      </div>
+    </header>
+    <section class="panel verification-card">
+      <p class="eyebrow">PUBLIC QR VERIFICATION</p>
+      <div id="verifyContent"><p class="muted">Loading record…</p></div>
+    </section>
+  </main>
+
+  <section id="printSheet" class="print-sheet" aria-hidden="true">
+    <div class="print-card">
+      <div class="print-main">
+        <div class="print-person">
+          <p class="print-eyebrow">VOTERLIST FORM RECORD</p>
+          <h1 id="printPersonName"></h1>
+          <div id="printFields" class="print-fields"></div>
+        </div>
+        <div id="printQr" class="print-qr"></div>
+      </div>
+      <ul class="print-note">
+        <li>राष्ट्रिय परिचयपत्र अनलाइन सक्रिय भएपछि त्यसको जानकारीको सन्देश तपाईंको फोनमा प्राप्त हुनेछ।</li>
+        <li>सन्देश प्राप्त भएपछि यहाँ दर्ता गरिएको विवरण अनलाइनमा हेर्न सक्नुहुनेछ।</li>
+        <li>तपाईंको निवेदनको स्थिति जाँच गर्न QR स्क्यान गर्नुहोस्। सबै अपडेट यहीँ उपलब्ध हुनेछन्।</li>
+        <li>तपाईंसँग WhatsApp नम्बर भएमा दर्ता गरिएको PDF उक्त नम्बरमा पठाइनेछ।</li>
+      </ul>
+      <footer class="print-footer">
+        <strong>INTERNATIONAL DIGITAL PHOTO STUDIO</strong>
+        <div class="print-contacts">
+          <span class="print-whatsapp">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.5-4.9a8.4 8.4 0 1 1 16-3.9Z"/><path d="M8.2 7.8c.2-.4.4-.4.7-.4h.5c.2 0 .4.1.5.4l.8 1.9c.1.2.1.4-.1.6l-.6.7c-.2.2-.2.4-.1.6.5.9 1.3 1.7 2.2 2.2.2.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4 0 .3-.2 1.1-.7 1.5-.5.4-1.1.6-1.8.5-.8-.1-1.8-.5-3.1-1.4-1.7-1.2-2.8-2.9-3.1-3.7-.3-.8-.3-1.5 0-2 .2-.5.5-.9.7-1.2Z"/></svg>
+            9804090881
+          </span>
+          <span>☎ 9842101229</span>
+        </div>
+      </footer>
+    </div>
+  </section>
+</body>
+</html>

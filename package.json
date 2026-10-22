@@ -1,0 +1,15 @@
+{
+  "name": "voterlist-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Private voter-list record management and status checking system",
+  "scripts": {
+    "local": "npm exec --yes --package=vercel@latest -- vercel dev --yes",
+    "build": "node --check app.js && node --check lib/auth.js && node --check lib/db.js && node --check lib/http.js && node --check lib/records.js && node --check lib/voterlist-history.js && node --check lib/models/Config.js && node --check lib/models/VoterlistData.js && node --check lib/models/VoterlistHistory.js && node --check api/auth.js && node --check api/records.js && node --check api/record-history.js && node --check api/check-status.js && node --check api/public-record.js && node --check api/voter-search.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "json5": "^2.2.3",
+    "mongoose": "^8.0.0"
+  }
+}

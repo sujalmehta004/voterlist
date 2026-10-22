@@ -1,0 +1,210 @@
+# Voterlist System
+
+A private voter-record management application built with Node.js, serverless API routes, and MongoDB. Administrators can enter and edit records, check unfinished NIN records against Nepal's Election Commission voter portal, review unique response and edit histories, print QR sheets, and share public QR verification links.
+
+> **Sensitive information:** Records include personally identifiable information. The management APIs require an administrator session, but QR verification pages are intentionally public and display record information. Restrict access to printed QR sheets, use a trusted device, and secure the MongoDB account and deployment environment.
+
+## Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Environment configuration](#environment-configuration)
+- [MongoDB setup](#mongodb-setup)
+- [Run locally](#run-locally)
+- [Deploy to Vercel](#deploy-to-vercel)
+- [How status checks work](#how-status-checks-work)
+- [Data storage](#data-storage)
+- [API routes](#api-routes)
+- [Validation and tests](#validation-and-tests)
+- [Troubleshooting](#troubleshooting)
+
+## Features
+
+- **Record entry and editing:** Enter NIN, name, AD/BS date of birth, mobile number, status, and optional notes. NIN and mobile numbers must contain exactly 10 digits. Names accept letters, spaces, and periods. AD and BS dates convert automatically.
+- **Status management:** Records can be `NOT ONLINE`, `PENDING`, or `DONE`. Search responses can set the status and voter-list/Abedan number.
+- **Voter portal checks:** Check one record or run sequential checks for unfinished records. Check All shows live results, can be closed while checks continue, and can be reopened during the same page session. Retry behavior is limited to transient portal/network errors.
+- **Record history:** A single consolidated history document per record retains the number of checks, unique full response entries, and record edits. Identical responses do not create duplicate response entries. Older check-history entries are consolidated when that record's history is next accessed or updated.
+- **Records table:** Filter by status, search by name/NIN/mobile/number, filter registration dates, and choose visible columns. Table data and column preferences are cached in the browser; use Ctrl/Cmd+R to sync the records list from MongoDB.
+- **QR verification and printing:** Print compact A4 QR sheets or open a record's QR link from its details. QR URLs use `https://voterlist.sujalmehta.com.np/verify/<code>`. Public verification displays the record's status and relevant details.
+- **Keyboard shortcuts:** Ctrl/Cmd+R syncs records; Ctrl/Cmd+S toggles fullscreen, opens Entry, and focuses the NIN field; Ctrl/Cmd+F toggles fullscreen, opens Records & Status, and focuses its search box.
+- **Admin security:** Management routes require an HttpOnly, SameSite=Strict signed session cookie with an eight-hour lifetime. The session signing secret must be at least 32 characters.
+
+## Requirements
+
+- Node.js 20 LTS or newer.
+- npm (installed with Node.js).
+- A MongoDB database reachable from the local machine and/or Vercel deployment. MongoDB Atlas is suitable.
+- A Vercel account for Vercel hosting and the `vercel` CLI for local development (the local npm script invokes the CLI through `npm exec`).
+
+## Quick start
+
+```bash
+git clone <repository-url>
+cd voterlist-system
+npm ci
+cp .env.example .env
+```
+
+Edit `.env` with your MongoDB connection string and a strong session secret, then start the local Vercel development server:
+
+```bash
+npm run local
+```
+
+Open the local URL printed by Vercel, commonly `http://localhost:3000`.
+
+If this directory is part of a larger repository rather than a standalone Git repository, use the repository's actual clone URL and change into the directory containing this `package.json`.
+
+## Environment configuration
+
+Copy `.env.example` to `.env`. The template is:
+
+```dotenv
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>/<database>
+VOTERLIST_SESSION_SECRET=replace-with-a-long-random-secret
+# Used only if the shared Config collection does not have adminUnlockPassword.
+VOTERLIST_ADMIN_PASSWORD=
+```
+
+### Variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `MONGODB_URI` | Yes | MongoDB connection URI for the database containing the application records and shared configuration. |
+| `VOTERLIST_SESSION_SECRET` | Yes | Secret used to sign admin session cookies. Must contain at least 32 characters. Use a unique, random value and keep it private. |
+| `VOTERLIST_ADMIN_PASSWORD` | Conditional | Fallback initial admin password when `configs` has no `key: "default"` document with `adminUnlockPassword`. It is not used if the database password is present. |
+
+Generate a session secret on macOS/Linux with:
+
+```bash
+openssl rand -base64 48
+```
+
+Use the resulting value for `VOTERLIST_SESSION_SECRET`. Do not reuse the MongoDB password or the admin password as the session secret.
+
+For Atlas URIs, replace the placeholders with your cluster and database details. If the database username or password contains reserved URI characters (such as `@`, `:`, `/`, `#`, or `%`), percent-encode those credentials. Do not add spaces around the `=` sign. Keep `.env` out of Git; it is ignored by the included `.gitignore`. Never paste real credentials into issues, logs, screenshots, or source files.
+
+Vercel's local development CLI reads local environment files. For deployed environments, add each variable separately under the Vercel project's **Settings → Environment Variables** for the relevant Development, Preview, and/or Production environments. Do not upload or commit `.env`.
+
+## MongoDB setup
+
+1. Create a MongoDB database and a dedicated application user with the minimum required read/write permissions for that database.
+2. Configure the database network access list to allow the machine running local development and the Vercel deployment to connect. Atlas deployments may require an appropriate Vercel network access strategy; avoid opening the database broadly unless you understand the risk.
+3. Set `MONGODB_URI` to the connection URI and include the intended database name.
+4. Configure the initial admin password in the shared `configs` collection as the document with `key: "default"` and an `adminUnlockPassword` value, or use `VOTERLIST_ADMIN_PASSWORD` as a fallback if that database value is absent.
+5. Sign in to the app with the configured password.
+
+The app uses the following MongoDB collections:
+
+- `VoterlistData` — voter records and QR tokens.
+- `VoterlistHistory` — consolidated check-response and edit histories.
+- `configs` — shared configuration, including the administrator password.
+
+The password-change screen updates the `adminUnlockPassword` field in the existing default `configs` document. If authentication is using only the environment fallback and that database field/document is absent, create/populate the config record first; the UI cannot persist a changed password to an absent database setting.
+
+## Run locally
+
+Install packages and copy the environment template once:
+
+```bash
+npm ci
+cp .env.example .env
+```
+
+Set the environment values in `.env`, then run:
+
+```bash
+npm run local
+```
+
+`npm run local` runs `npm exec --yes --package=vercel@latest -- vercel dev --yes`. It obtains the Vercel CLI through npm without adding it to the application's runtime dependencies. On first use, Vercel may require CLI authentication or project linking. The app is served with Vercel's local function routing so the files under `api/` work as serverless endpoints.
+
+Stop the development server with Ctrl+C.
+
+## Deploy to Vercel
+
+1. Push the project to a Git repository that Vercel can access. If this app is in a subdirectory of a larger repository, set that subdirectory as the Vercel project's **Root Directory**.
+2. In Vercel, create/import a project for this application and select the correct framework/build settings. The repository includes `vercel.json`; the app is served from the project root with functions in `api/`.
+3. Add `MONGODB_URI`, `VOTERLIST_SESSION_SECRET`, and the initial `VOTERLIST_ADMIN_PASSWORD` if needed in **Settings → Environment Variables**. Add them to Production and any Preview environment where the app should work.
+4. Ensure MongoDB network access permits the deployment to connect.
+5. Deploy and verify that the login screen, admin login, records list, and a QR verification link work.
+6. Add `voterlist.sujalmehta.com.np` under the Vercel project's **Settings → Domains**. Apply the DNS record Vercel specifies at your DNS provider, then wait for Vercel to confirm the domain and HTTPS certificate.
+
+After changing Vercel environment variables, redeploy for the changes to take effect.
+
+The app's QR links are currently configured to use `https://voterlist.sujalmehta.com.np`. If you deploy under a different domain, update the `verificationUrl` function in `app.js` before deployment.
+
+`vercel.json` rewrites `/verify/<code>` to the frontend. The page reads the code and requests the public verification API. Do not remove this rewrite unless an equivalent route is configured.
+
+The QR generator and Nepali date converter are loaded from public CDNs by `index.html`; printing and automatic date conversion need those resources to load.
+
+## How status checks work
+
+1. The browser sends a signed-in request to `POST /api/check-status` with NIN, date of birth, and first name.
+2. The app validates those values against the saved record.
+3. The server creates a voter-portal session by requesting `https://applyvr.election.gov.np/Login/Preregistration/EnterMobileNo`.
+4. It posts the NIN, DOB, and first name to the portal's `https://applyvr.election.gov.np/Login/GetFromNIN` endpoint.
+5. For already-registered responses or incomplete profile payloads, it may request `https://applyvr.election.gov.np/Dashboard/NewEnrollment` and parse the returned page.
+6. The response is interpreted and the local record's status/identifiers are updated. The sanitized response is saved to the record's consolidated history. Portrait image payloads are not retained.
+
+The actual voter-portal requests run on the server; browser users call the app's own `/api/check-status` route. The portal is an external service, so its availability and response format can change independently of this project.
+
+Status rules:
+
+- `DONE`: a voter-list number or Abedan number is found.
+- `PENDING`: the search succeeds but no such number is returned, including profile/portrait responses.
+- `NOT ONLINE`: the search indicates that no matching online record was found.
+- A recognized portal outage preserves the record's existing status and remains eligible for retry.
+
+Check All runs eligible records sequentially. Closing its modal does not cancel the run; use the Check All button again to reopen progress and results. Checks run only while the current page remains loaded. Refreshing or closing the page stops the in-memory batch.
+
+## Data storage
+
+- Records and history are stored in MongoDB.
+- Record-list data and visible-table column preferences are cached in browser local storage. The cached records are personal data; use only trusted browser profiles/devices and clear browser storage when appropriate.
+- The records list is fetched from MongoDB on initial load if there is no local cache. Ctrl/Cmd+R explicitly syncs it. Individual record writes and status checks still contact the server.
+- QR verification is public by design. Anyone with a valid QR link can view the information returned by `/api/public-record`, including NIN, mobile, dates of birth, status, notes, and any available voter-list/Abedan number. Share links/printouts only with authorized recipients.
+- Back up MongoDB regularly and restrict database-user permissions and network access. This app does not provide a database backup/restore interface.
+
+## API routes
+
+| Route | Methods | Purpose | Access |
+| --- | --- | --- | --- |
+| `/api/auth` | `GET`, `POST`, `PUT`, `DELETE` | Check session, sign in, change admin password, and sign out. | Password/session protected as appropriate. |
+| `/api/records` | `GET`, `POST`, `PUT` | List, create, and update voter records. | Admin session required. |
+| `/api/check-status` | `POST` | Check one saved record against the voter portal and save its status/history. | Admin session required. |
+| `/api/record-history?recordId=<id>` | `GET` | Read unique response and edit histories for one record. | Admin session required. |
+| `/api/public-record?code=<token>` | `GET` | Return the public-safe fields for a QR verification token. | Public by design. |
+| `/api/voter-search` | `POST` | Server-side voter portal search/proxy route. | Admin session required. |
+| `/verify/<code>` | `GET` | Public QR verification page. | Public by design. |
+
+## Validation and tests
+
+Run the project's checks:
+
+```bash
+npm run build
+npm test
+```
+
+`npm run build` performs Node.js syntax checks on the application and API files; it is not a bundling or production build step. `npm test` runs the automated tests using Node's built-in test runner.
+
+## Troubleshooting
+
+| Problem | Things to check |
+| --- | --- |
+| `MONGODB_URI is required` | Ensure `.env` exists locally, has a non-empty `MONGODB_URI`, and is in the app's project root. On Vercel, set it in project environment variables and redeploy. |
+| MongoDB connection times out | Verify the URI, database credentials, encoded special characters, cluster status, and MongoDB network access list. |
+| No admin password is configured | Add `adminUnlockPassword` to the default document in `configs`, or set `VOTERLIST_ADMIN_PASSWORD`. A database value takes precedence. |
+| Session secret error | Set `VOTERLIST_SESSION_SECRET` to a random value of at least 32 characters and restart/redeploy. |
+| Login works locally but not on Vercel | Confirm all production environment variables are configured and that the latest deployment includes them. |
+| QR route returns a not-found page | Verify `/verify/<code>` rewrite configuration, deployed `vercel.json`, domain routing, and that the record still exists. |
+| QR page cannot find a record | Verify the complete token in the link and that the corresponding MongoDB record exists. |
+| Voter status check fails or retries | The external portal may be unavailable or have changed. Retry later and inspect the server/function logs for the exact upstream failure. |
+| Date conversion or printing does not work | Check connectivity to the public CDN scripts included in `index.html`. |
+| Browser shows old records | Use Ctrl/Cmd+R to sync from MongoDB; the app otherwise prefers its local browser cache. |
+
+## License
+
+No license is currently specified. All rights remain with the project owner unless a license is added to this repository.

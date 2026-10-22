@@ -1,0 +1,9 @@
+{
+  "outputDirectory": ".",
+  "rewrites": [
+    {
+      "source": "/verify/:code",
+      "destination": "/?verify=:code"
+    }
+  ]
+}
