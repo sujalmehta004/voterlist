@@ -3164,13 +3164,23 @@ async function initializeApp() {
     const hasCommandKey = event.ctrlKey || event.metaKey;
     const shortcutKey = event.key.toLocaleLowerCase();
     const appIsVisible = !$('appScreen').classList.contains('hidden');
-    if (hasCommandKey && shortcutKey === 'r' && appIsVisible) {
+    if (hasCommandKey && shortcutKey === 'g' && appIsVisible && state.currentTab === 'records' && !event.repeat) {
+      event.preventDefault();
+      const controls = document.querySelector('.table-panel');
+      if (!controls.classList.contains('filters-hidden')) {
+        controls.classList.add('filters-hidden');
+      } else if (!controls.classList.contains('counts-hidden')) {
+        controls.classList.add('counts-hidden');
+      } else {
+        controls.classList.remove('filters-hidden', 'counts-hidden');
+      }
+    } else if (hasCommandKey && shortcutKey === 'r' && appIsVisible) {
       event.preventDefault();
       void softRefresh();
-    } else if (hasCommandKey && ['s', 'f'].includes(shortcutKey) && appIsVisible) {
+    } else if (hasCommandKey && ['s', 'f', 'd'].includes(shortcutKey) && appIsVisible) {
       event.preventDefault();
-      const tabName = shortcutKey === 's' ? 'entry' : 'records';
-      const focusId = shortcutKey === 's' ? 'nin' : 'recordsSearch';
+      const tabName = shortcutKey === 's' ? 'entry' : shortcutKey === 'd' ? 'old-entry' : 'records';
+      const focusId = shortcutKey === 's' ? 'nin' : shortcutKey === 'd' ? 'oldNin' : 'recordsSearch';
       const isCurrentTab = state.currentTab === tabName;
       setTab(tabName);
       $(focusId).focus();

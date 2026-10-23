@@ -329,6 +329,10 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .registration-analytics-row.active { border-color: #65a49b; background: #eaf6f3; color: #175d56; }
 .registration-analytics-row span:last-child { min-width: 24px; color: var(--ink); text-align: right; }
 .table-filters { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(190px, 1.2fr) minmax(170px, 1.1fr) minmax(160px, 1fr) auto; align-items: end; gap: 10px; margin: 0 0 14px; }
+.table-panel.filters-hidden .table-filters > .field,
+.table-panel.filters-hidden #clearFiltersButton { display: none; }
+.table-panel.filters-hidden .table-filters { display: flex; justify-content: flex-end; margin-bottom: 0; }
+.table-panel.counts-hidden #statusCounts { display: none; }
 .table-filter-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .table-filter-actions .toolbar-icon-only { flex: 0 0 42px; }
 .table-filters .field label { min-height: 15px; white-space: nowrap; }
