@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const connectToDatabase = require('../lib/db');
+const Config = require('../lib/models/Config');
 const VoterlistData = require('../lib/models/VoterlistData');
 const VoterlistHistory = require('../lib/models/VoterlistHistory');
 const { saveRecordUpdate } = require('../lib/voterlist-history');
@@ -47,6 +48,44 @@ module.exports = async function records(req, res) {
         record.statusCheckCount = countsByRecordId.get(String(record._id)) || 0;
       }
       return sendJson(res, 200, { records });
+    }
+    if (req.method === 'DELETE') {
+      const body = await readJsonBody(req);
+      const recordIds = Array.isArray(body.recordIds)
+        ? [...new Set(body.recordIds.map((recordId) => String(recordId || '').trim()))]
+        : [String(body.recordId || '').trim()];
+      const password = String(body.password || '');
+      if (!recordIds.length || recordIds.some((recordId) => !mongoose.isValidObjectId(recordId))) {
+        return sendJson(res, 400, { error: 'Select valid records to delete.' });
+      }
+      if (!password) return sendJson(res, 400, { error: 'Enter the admin password to delete this record.' });
+
+      const config = await Config
+        .findOne({ key: 'default' })
+        .select('adminUnlockPassword')
+        .lean();
+      const expectedPassword = String(
+        config?.adminUnlockPassword || process.env.VOTERLIST_ADMIN_PASSWORD || ''
+      );
+      if (!expectedPassword) return sendJson(res, 503, { error: 'No admin password is configured.' });
+      if (password !== expectedPassword) {
+        return sendJson(res, 401, { error: 'The admin password is incorrect.' });
+      }
+
+      const existingRecords = await VoterlistData.find({ _id: { $in: recordIds } }).select('_id').lean();
+      if (existingRecords.length !== recordIds.length) {
+        return sendJson(res, 404, { error: 'One or more voterlist records no longer exist. Refresh the records and try again.' });
+      }
+      await VoterlistData.deleteMany({ _id: { $in: recordIds } });
+      try {
+        await VoterlistHistory.deleteMany({ recordId: { $in: recordIds } });
+      } catch (error) {
+        console.error('Voterlist record was deleted, but its history cleanup failed:', error.message);
+        return sendJson(res, 500, {
+          error: 'The voter record(s) were deleted, but their history could not be removed. Contact the administrator.',
+        });
+      }
+      return sendJson(res, 200, { deleted: true, recordIds });
     }
     if (!['POST', 'PUT'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed.' });
 

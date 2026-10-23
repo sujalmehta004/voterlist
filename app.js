@@ -1,14 +1,27 @@
 const state = {
   records: [],
   currentTab: 'entry',
-  workspaceSettings: { hideEntryTab: false, hideOldEntryTab: false, hideDatabaseTab: false },
+  workspaceSettings: {
+    hideEntryTab: false,
+    hideOldEntryTab: false,
+    hideDatabaseTab: false,
+    hidePrintMultipleButton: false,
+    hideDeleteMultipleButton: false,
+    hideRecordDeleteButton: false,
+    automaticStatusRetries: 3,
+  },
   checkingAll: false,
   stopBatchRequested: false,
   batchRunPromise: null,
   statusCheckPromise: null,
-  activeStatusCheckId: '',
+  activeStatusChecks: new Map(),
+  individualCheckResults: [],
+  individualCheckOpenTimer: null,
+  retryingUnavailableChecks: false,
+  retryingIndividualChecks: new Set(),
   stopStatusCheckRequested: false,
   refreshingRecords: false,
+  settingsUnlocked: false,
   savedRecord: null,
   recordsLoaded: false,
   editingRecordId: null,
@@ -81,6 +94,8 @@ async function handlePasswordChange(event) {
     });
     $('passwordForm').reset();
     $('passwordDialog').close();
+    $('settingsDialog').close();
+    state.settingsUnlocked = false;
     $('loginMessage').textContent = 'Password updated. Sign in again with your new password.';
     setScreen('loginScreen');
   } catch (error) {
@@ -95,6 +110,12 @@ function isValidWorkspaceSettings(settings) {
     && typeof settings.hideEntryTab === 'boolean'
     && typeof settings.hideOldEntryTab === 'boolean'
     && typeof settings.hideDatabaseTab === 'boolean'
+    && typeof settings.hidePrintMultipleButton === 'boolean'
+    && typeof settings.hideDeleteMultipleButton === 'boolean'
+    && typeof settings.hideRecordDeleteButton === 'boolean'
+    && Number.isInteger(settings.automaticStatusRetries)
+    && settings.automaticStatusRetries >= 1
+    && settings.automaticStatusRetries <= 15
     && !(settings.hideEntryTab && settings.hideOldEntryTab && settings.hideDatabaseTab);
 }
 
@@ -104,6 +125,10 @@ function normalizeWorkspaceSettings(settings) {
     hideEntryTab: settings.hideEntryTab,
     hideOldEntryTab: settings.hideOldEntryTab ?? false,
     hideDatabaseTab: settings.hideDatabaseTab,
+    hidePrintMultipleButton: settings.hidePrintMultipleButton ?? false,
+    hideDeleteMultipleButton: settings.hideDeleteMultipleButton ?? false,
+    hideRecordDeleteButton: settings.hideRecordDeleteButton ?? false,
+    automaticStatusRetries: settings.automaticStatusRetries ?? 3,
   };
   return isValidWorkspaceSettings(normalized) ? normalized : null;
 }
@@ -115,6 +140,11 @@ function applyWorkspaceSettings() {
   document.querySelector('.tab[data-tab="entry"]').hidden = state.workspaceSettings.hideEntryTab;
   document.querySelector('.tab[data-tab="old-entry"]').hidden = state.workspaceSettings.hideOldEntryTab;
   document.querySelector('.tab[data-tab="records"]').hidden = state.workspaceSettings.hideDatabaseTab;
+  $('printMultipleButton').classList.toggle('hidden', state.workspaceSettings.hidePrintMultipleButton);
+  $('deleteMultipleButton').classList.toggle('hidden', state.workspaceSettings.hideDeleteMultipleButton);
+  document.querySelectorAll('[data-delete]').forEach((button) => {
+    button.classList.toggle('hidden', state.workspaceSettings.hideRecordDeleteButton);
+  });
   setTab(state.currentTab);
 }
 
@@ -166,6 +196,10 @@ async function saveWorkspaceSettings(event) {
     hideEntryTab: $('hideEntryTab').checked,
     hideOldEntryTab: $('hideOldEntryTab').checked,
     hideDatabaseTab: $('hideDatabaseTab').checked,
+    hidePrintMultipleButton: $('hidePrintMultipleButton').checked,
+    hideDeleteMultipleButton: $('hideDeleteMultipleButton').checked,
+    hideRecordDeleteButton: $('hideRecordDeleteButton').checked,
+    automaticStatusRetries: state.workspaceSettings.automaticStatusRetries,
   };
   message.textContent = '';
   if (settings.hideEntryTab && settings.hideOldEntryTab && settings.hideDatabaseTab) {
@@ -212,11 +246,45 @@ async function verifyWorkspaceAdminPassword(event) {
       method: 'POST',
       body: JSON.stringify({ password: $('workspaceAdminPassword').value }),
     });
-    $('workspacePasswordDialog').close();
-    $('hideEntryTab').checked = state.workspaceSettings.hideEntryTab;
-    $('hideOldEntryTab').checked = state.workspaceSettings.hideOldEntryTab;
-    $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
-    $('workspaceSettingsDialog').showModal();
+    $('workspacePasswordForm').reset();
+    state.settingsUnlocked = true;
+    renderSettingsAccess();
+    showToast('Admin settings unlocked for this session.');
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveRetrySettings(event) {
+  event.preventDefault();
+  const retries = Number($('automaticStatusRetries').value);
+  const message = $('retrySettingsMessage');
+  const button = $('saveRetrySettingsButton');
+  message.textContent = '';
+  if (!Number.isInteger(retries) || retries < 1 || retries > 15) {
+    message.textContent = 'Enter a whole number from 1 to 15.';
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    const result = await apiRequest('/api/workspace-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ ...state.workspaceSettings, automaticStatusRetries: retries }),
+    });
+    const savedSettings = normalizeWorkspaceSettings(result.settings);
+    if (!savedSettings) throw new Error('The server returned invalid retry settings.');
+    state.workspaceSettings = savedSettings;
+    try {
+      localStorage.setItem(WORKSPACE_SETTINGS_KEY, JSON.stringify(savedSettings));
+    } catch (error) {
+      console.error('Could not cache retry settings locally:', error);
+      showToast('Retry count was saved, but could not be cached in this browser.', true);
+    }
+    $('retrySettingsDialog').close();
+    showToast(`Automatic retry count set to ${retries}.`);
   } catch (error) {
     message.textContent = error.message;
   } finally {
@@ -227,6 +295,8 @@ async function verifyWorkspaceAdminPassword(event) {
 async function softRefresh() {
   if (state.refreshingRecords) return;
   state.refreshingRecords = true;
+  document.querySelectorAll('dialog[open]').forEach((dialog) => dialog.close());
+  showToast('Refreshing records…');
   try {
     if (state.checkingAll) {
       state.stopBatchRequested = true;
@@ -244,14 +314,6 @@ async function softRefresh() {
     $('datePeriodFilter').value = 'ALL';
     $('registrationSort').value = 'NEWEST';
     state.selectedStatusFilter = 'NOT DONE';
-    $('checkAllDialog').close();
-    $('settingsDialog').close();
-    $('passwordDialog').close();
-    $('workspacePasswordDialog').close();
-    $('workspaceSettingsDialog').close();
-    $('savedRecordDialog').close();
-    $('recordDetailsDialog').close();
-    $('statusCheckResponseDialog').close();
     const loaded = await loadRecords({ force: true });
     if (loaded) {
       showToast('Records synced. Forms, searches, and filters have been cleared.');
@@ -260,6 +322,10 @@ async function softRefresh() {
     state.stopBatchRequested = false;
     state.stopStatusCheckRequested = false;
     state.refreshingRecords = false;
+    const toast = $('appMessage');
+    toast.classList.remove('refreshing');
+    window.clearTimeout(showToast.timeout);
+    showToast.timeout = window.setTimeout(() => toast.classList.add('hidden'), 6000);
   }
 }
 
@@ -360,9 +426,15 @@ function showToast(message, isError = false) {
   const toast = $('appMessage');
   toast.textContent = message;
   toast.classList.toggle('error', isError);
+  toast.classList.toggle('refreshing', state.refreshingRecords);
   toast.classList.remove('hidden');
+  toast.classList.remove('toast-enter');
+  void toast.offsetWidth;
+  toast.classList.add('toast-enter');
   window.clearTimeout(showToast.timeout);
-  showToast.timeout = window.setTimeout(() => toast.classList.add('hidden'), 6000);
+  if (!state.refreshingRecords) {
+    showToast.timeout = window.setTimeout(() => toast.classList.add('hidden'), 6000);
+  }
 }
 
 function setScreen(screen) {
@@ -410,19 +482,22 @@ function applyRecordColumnVisibility() {
   });
 }
 
-function openColumnSettings() {
+function renderRecordColumnSettings() {
   $('recordColumnsOptions').innerHTML = RECORD_COLUMNS.map((column) => `
-    <label class="column-option">
-      <input type="checkbox" name="record-column" value="${column.id}" ${state.visibleRecordColumns.includes(column.id) ? 'checked' : ''} />
-      <span>${escapeHtml(column.label)}</span>
-    </label>
+    <button class="column-setting-option${state.visibleRecordColumns.includes(column.id) ? ' is-selected' : ''}" type="button" data-record-column-toggle="${column.id}" aria-pressed="${state.visibleRecordColumns.includes(column.id)}">
+      ${escapeHtml(column.label)}
+    </button>
   `).join('');
-  $('recordColumnsDialog').showModal();
 }
 
-function saveColumnSettings() {
-  const selected = [...$('recordColumnsOptions').querySelectorAll('input[name="record-column"]:checked')]
-    .map((input) => input.value);
+function saveColumnSettings(event) {
+  const button = event.target.closest('[data-record-column-toggle]');
+  if (!button) return;
+  const columnId = button.dataset.recordColumnToggle;
+  const isSelected = state.visibleRecordColumns.includes(columnId);
+  const selected = isSelected
+    ? state.visibleRecordColumns.filter((column) => column !== columnId)
+    : [...state.visibleRecordColumns, columnId];
   if (!selected.length) {
     showToast('Select at least one column to display.', true);
     return;
@@ -432,11 +507,21 @@ function saveColumnSettings() {
   } catch (error) {
     console.error('Could not save table column preferences:', error);
     showToast('Column settings could not be saved in this browser.', true);
+    renderRecordColumnSettings();
     return;
   }
   state.visibleRecordColumns = selected;
   applyRecordColumnVisibility();
-  $('recordColumnsDialog').close();
+  renderRecordColumnSettings();
+}
+
+function renderSettingsAccess() {
+  $('settingsUnlockSection').classList.toggle('hidden', state.settingsUnlocked);
+  $('adminSettingsSections').classList.toggle('hidden', !state.settingsUnlocked);
+  if (!state.settingsUnlocked) {
+    $('workspacePasswordForm').reset();
+    $('workspacePasswordMessage').textContent = '';
+  }
 }
 
 function loadCachedRecords() {
@@ -813,23 +898,75 @@ function renderRecordDetails(record) {
   $('recordUpdatesDialog').dataset.recordId = record._id;
 }
 
-function renderLatestCheckResponse(response, label = 'Voterlist status check response') {
-  const message = batchResponseMessage(response) || 'No response message returned.';
-  $('latestCheckResponseContent').innerHTML = `
-    <p class="latest-check-response-label">${escapeHtml(label)}</p>
-    <p class="latest-check-response-message">${escapeHtml(message)}</p>`;
+function renderIndividualCheckResults() {
+  const results = state.individualCheckResults;
+  const completedCount = results.filter((result) => !result.pending).length;
+  const activeCount = results.length - completedCount;
+  const unavailableResults = results.filter((result) => (
+    !result.pending && isExactNidServerUnavailableResponse(result)
+  ));
+  $('statusCheckResponseTitle').textContent = activeCount
+    ? `${completedCount} complete · ${activeCount} still running`
+    : `${results.length} status check${results.length === 1 ? '' : 's'} complete`;
+  $('statusCheckRecordSummary').textContent = 'Status of every individual check in this group:';
+  $('latestCheckResponseContent').innerHTML = results.map((result) => {
+    if (result.pending) {
+      return `
+        <article class="individual-check-result individual-check-result-pending">
+          <div class="individual-check-result-heading">
+            <strong>${escapeHtml(result.record.fullName)}</strong>
+            <span>CHECKING…</span>
+          </div>
+          <p class="individual-check-result-nin">NIN: ${escapeHtml(result.record.nin || '—')}</p>
+          <p class="individual-check-result-message">Waiting for the voter portal response.</p>
+          ${state.retryingIndividualChecks.has(result.record._id) ? `<button class="button primary tiny is-retrying" type="button" data-retry-check="${escapeHtml(result.record._id)}" disabled aria-busy="true">Retrying…</button>` : ''}
+        </article>`;
+    }
+    const message = batchResponseMessage(result.response) || result.error || 'No response message returned.';
+    const status = result.record ? recordStatus(result.record) : 'CHECK FAILED';
+    return `
+      <article class="individual-check-result">
+        <div class="individual-check-result-heading">
+          <strong>${escapeHtml(result.record?.fullName || 'Unknown record')}</strong>
+          <span>${escapeHtml(status)}</span>
+        </div>
+        <p class="individual-check-result-nin">NIN: ${escapeHtml(result.record?.nin || '—')}</p>
+        <p class="individual-check-result-message">${escapeHtml(message)}</p>
+        ${result.canRetry ? `<button class="button primary tiny${state.activeStatusChecks.has(result.record._id) ? ' is-retrying' : ''}" type="button" data-retry-check="${escapeHtml(result.record._id)}" ${state.activeStatusChecks.has(result.record._id) ? 'disabled aria-busy="true"' : ''}>${state.activeStatusChecks.has(result.record._id) ? 'Retrying…' : 'Try again'}</button>` : ''}
+      </article>`;
+  }).join('');
+  const retryUnavailableButton = $('retryUnavailableChecksButton');
+  const isRetryingUnavailable = unavailableResults.some((result) => (
+    state.activeStatusChecks.has(result.record?._id)
+  ));
+  retryUnavailableButton.classList.toggle('hidden', unavailableResults.length === 0 && !state.retryingUnavailableChecks);
+  retryUnavailableButton.classList.toggle('is-retrying', state.retryingUnavailableChecks || isRetryingUnavailable);
+  retryUnavailableButton.disabled = state.retryingUnavailableChecks || unavailableResults.every((result) => (
+    state.activeStatusChecks.has(result.record?._id)
+  ));
+  retryUnavailableButton.textContent = state.retryingUnavailableChecks || isRetryingUnavailable
+    ? `Retrying NID/NIN server-unavailable checks…`
+    : `Retry all NID/NIN server-unavailable checks (${unavailableResults.length})`;
+  if (!$('statusCheckResponseDialog').open) $('statusCheckResponseDialog').showModal();
 }
 
-function openStatusCheckResponseDialog(record) {
-  const dialog = $('statusCheckResponseDialog');
-  dialog.dataset.recordId = record._id;
-  dialog.dataset.checking = 'true';
-  $('statusCheckResponseTitle').textContent = record.fullName || 'Check response';
-  $('statusCheckRecordSummary').textContent = `NIN: ${record.nin} · Date of birth: ${record.dobAd}`;
-  $('retryStatusCheckButton').hidden = true;
-  $('retryStatusCheckButton').disabled = false;
-  renderLatestCheckResponse({ message: 'Checking status…' }, 'Status check in progress');
-  if (!dialog.open) dialog.showModal();
+function isExactNidServerUnavailableResponse(result) {
+  return /NI[DN] सर्भरबाट डेटा प्राप्त हुन सकेन। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।/u
+      .test(batchResponseMessage(result.response));
+}
+
+function updateStatusCheckPromise() {
+  const activePromises = [...state.activeStatusChecks.values()];
+  state.statusCheckPromise = activePromises.length ? Promise.all(activePromises) : null;
+}
+
+function scheduleIndividualCheckResults() {
+  if (state.refreshingRecords || !state.individualCheckResults.length) return;
+  window.clearTimeout(state.individualCheckOpenTimer);
+  state.individualCheckOpenTimer = window.setTimeout(() => {
+    state.individualCheckOpenTimer = null;
+    if (!state.refreshingRecords && !state.activeStatusChecks.size) renderIndividualCheckResults();
+  }, 500);
 }
 
 function openRecordDetails(record) {
@@ -1018,10 +1155,11 @@ function renderRecords() {
         <td data-record-column="registered-days">${escapeHtml(daysSince(record.createdAt))}</td>
         <td data-record-column="updated">${escapeHtml(formatBsDate(record.updatedAt))}</td>
         <td data-record-column="updated-days">${escapeHtml(daysSince(record.updatedAt))}</td>
-        <td data-record-column="notes">${escapeHtml(record.notes || '—')}</td>
+        <td data-record-column="notes">${escapeHtml(record.notes || '')}</td>
         <td class="row-actions" data-record-column="actions">
-          <button class="button primary tiny check-record-action" type="button" data-check="${escapeHtml(record._id)}" aria-label="Check status for ${escapeHtml(record.fullName)}" title="Check status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg><span>Check</span></button>
+          <button class="button primary tiny check-record-action${state.activeStatusChecks.has(record._id) ? ' is-checking' : ''}${state.individualCheckResults.some((item) => item.record?._id === record._id && !item.pending) ? ' is-checked' : ''}" type="button" data-check="${escapeHtml(record._id)}" aria-label="${state.activeStatusChecks.has(record._id) ? 'View running check for' : state.individualCheckResults.some((item) => item.record?._id === record._id && !item.pending) ? 'Show status check results for' : 'Check status for'} ${escapeHtml(record.fullName)}" title="${state.activeStatusChecks.has(record._id) ? 'Show running checks' : state.individualCheckResults.some((item) => item.record?._id === record._id && !item.pending) ? 'Show check results' : 'Check status'}" ${state.activeStatusChecks.has(record._id) ? 'aria-busy="true"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true">${state.individualCheckResults.some((item) => item.record?._id === record._id && !item.pending) ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/>'}</svg><span>${state.activeStatusChecks.has(record._id) ? 'Checking…' : state.individualCheckResults.some((item) => item.record?._id === record._id && !item.pending) ? 'Checked' : 'Check'}</span></button>
           <button class="button subtle tiny print-record-action" type="button" data-print="${escapeHtml(record._id)}" aria-label="Print A4 sheet for ${escapeHtml(record.fullName)}" title="Print A4"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/><path d="M17 11h.01"/></svg><span>Print</span></button>
+          <button class="button tiny delete-record-action${state.workspaceSettings.hideRecordDeleteButton ? ' hidden' : ''}" type="button" data-delete="${escapeHtml(record._id)}" aria-label="Delete ${escapeHtml(record.fullName)}" title="Delete record">Delete</button>
         </td>
       </tr>
     `).join('')
@@ -1078,6 +1216,48 @@ function renderRecords() {
       if (record) checkRecordStatus(record, button);
     });
   });
+  recordsBody.querySelectorAll('[data-delete]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const record = state.records.find((item) => item._id === button.dataset.delete);
+      if (!record) return;
+      $('deleteRecordTitle').textContent = `Delete ${record.fullName}?`;
+      $('deleteRecordDescription').textContent = 'This permanently deletes the voter record and its associated history. Enter the admin password to continue.';
+      $('deleteRecordDialog').dataset.recordId = record._id;
+      $('deleteRecordPassword').value = '';
+      $('deleteRecordMessage').textContent = '';
+      $('deleteRecordDialog').showModal();
+      $('deleteRecordPassword').focus();
+    });
+  });
+}
+
+async function handleDeleteRecord(event) {
+  event.preventDefault();
+  const dialog = $('deleteRecordDialog');
+  const button = $('confirmDeleteRecordButton');
+  const message = $('deleteRecordMessage');
+  message.textContent = '';
+  button.disabled = true;
+  try {
+    const { recordIds } = await apiRequest('/api/records', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        recordId: dialog.dataset.recordId,
+        password: $('deleteRecordPassword').value,
+      }),
+    });
+    const deletedIds = new Set(recordIds);
+    state.records = state.records.filter((record) => !deletedIds.has(record._id));
+    state.recordsLoaded = true;
+    cacheRecordsOrNotify();
+    renderRecords();
+    dialog.close();
+    showToast('Voter record and its history deleted.');
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function loadRecords({ force = false } = {}) {
@@ -1221,7 +1401,6 @@ async function checkStatus(details) {
   });
 }
 
-const AUTOMATIC_STATUS_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
 
 function isRetryableStatusCheckError(error) {
@@ -1233,10 +1412,15 @@ function isVoterServerUnavailableResponse(result) {
     || /NI[DN] सर्भरबाट डेटा प्राप्त हुन सकेन/i.test(batchResponseMessage(result.response));
 }
 
-async function checkStatusWithRetries(details, onRetry = () => {}, shouldStop = () => false) {
+async function checkStatusWithRetries(
+  details,
+  onRetry = () => {},
+  shouldStop = () => false,
+  maxRetries = state.workspaceSettings.automaticStatusRetries,
+) {
   let lastResult;
   let lastRetryReason = 'request failed';
-  for (let attempt = 0; attempt <= AUTOMATIC_STATUS_RETRIES; attempt += 1) {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
       const result = await checkStatus(details);
       lastResult = result;
@@ -1246,7 +1430,7 @@ async function checkStatusWithRetries(details, onRetry = () => {}, shouldStop = 
         return { ...result, cancelled: true, noResponse: !hasResponseMessage || unavailableResponse };
       }
       const shouldRetry = unavailableResponse || !hasResponseMessage;
-      if (!shouldRetry || attempt === AUTOMATIC_STATUS_RETRIES) {
+      if (!shouldRetry || attempt === maxRetries) {
         return { ...result, noResponse: !hasResponseMessage || unavailableResponse };
       }
       lastRetryReason = 'no response';
@@ -1256,7 +1440,7 @@ async function checkStatusWithRetries(details, onRetry = () => {}, shouldStop = 
         stoppedError.code = 'STATUS_CHECK_STOPPED';
         throw stoppedError;
       }
-      if (!isRetryableStatusCheckError(error) || attempt === AUTOMATIC_STATUS_RETRIES) {
+      if (!isRetryableStatusCheckError(error) || attempt === maxRetries) {
         throw error;
       }
       lastRetryReason = 'request failed';
@@ -1279,44 +1463,71 @@ async function checkStatusWithRetries(details, onRetry = () => {}, shouldStop = 
   throw new Error('Status check retry limit was reached unexpectedly.');
 }
 
-function showStatusResult(record, response) {
-  const number = record.voterListNumber || record.abedanNumber;
-  const message = batchResponseMessage(response) || record.lastCheckMessage;
-  if (record.status === 'DONE') {
-    showToast(`Status DONE. Number: ${number}`);
-  } else if (record.status === 'NOT ONLINE') {
-    showToast(`Status NOT ONLINE. ${message || 'The search was unsuccessful.'}`);
-  } else {
-    showToast(`Status PENDING. ${message || 'No voter-list / Abedan number was returned.'}`);
-  }
-}
-
 function checkRecordStatus(record, button) {
-  if (state.statusCheckPromise) {
-    if (state.activeStatusCheckId === record._id && !$('statusCheckResponseDialog').open) {
-      $('statusCheckResponseDialog').showModal();
-    }
-    return state.statusCheckPromise;
-  }
   if (state.checkingAll) {
     showToast('Wait for Check All to finish before checking an individual record.', true);
     return Promise.resolve();
   }
-  state.stopStatusCheckRequested = false;
-  state.activeStatusCheckId = record._id;
-  const promise = runRecordStatusCheck(record, button);
-  state.statusCheckPromise = promise.finally(() => {
-    if (state.statusCheckPromise === trackedPromise) {
-      state.statusCheckPromise = null;
-      state.activeStatusCheckId = '';
+  if (state.refreshingRecords) return Promise.resolve();
+  const activeCheck = state.activeStatusChecks.get(record._id);
+  if (activeCheck) {
+    renderIndividualCheckResults();
+    return activeCheck;
+  }
+  const existingResult = state.individualCheckResults.find((item) => item.record?._id === record._id);
+  if (existingResult && !existingResult.pending) {
+    renderIndividualCheckResults();
+    return Promise.resolve(existingResult);
+  }
+
+  if (!state.activeStatusChecks.size) {
+    if (!state.individualCheckOpenTimer && !$('statusCheckResponseDialog').open) {
+      state.individualCheckResults = [];
     }
-  });
-  const trackedPromise = state.statusCheckPromise;
+    state.stopStatusCheckRequested = false;
+  }
+  window.clearTimeout(state.individualCheckOpenTimer);
+  state.individualCheckOpenTimer = null;
+  state.individualCheckResults = state.individualCheckResults
+    .filter((item) => item.record?._id !== record._id);
+  state.individualCheckResults.push({ record, pending: true });
+  if ($('statusCheckResponseDialog').open) renderIndividualCheckResults();
+
+  let trackedPromise;
+  trackedPromise = runRecordStatusCheck(record, button)
+    .then((result) => {
+      if (result && !result.cancelled && !state.refreshingRecords) {
+        state.individualCheckResults = state.individualCheckResults
+          .filter((item) => item.record?._id !== record._id);
+        state.individualCheckResults.push(result);
+      } else {
+        state.individualCheckResults = state.individualCheckResults
+          .filter((item) => item.record?._id !== record._id);
+      }
+      if ($('statusCheckResponseDialog').open && !state.refreshingRecords) {
+        renderIndividualCheckResults();
+      }
+      return result;
+    })
+    .finally(() => {
+      if (state.activeStatusChecks.get(record._id) === trackedPromise) {
+        state.activeStatusChecks.delete(record._id);
+        updateStatusCheckPromise();
+      }
+      if ($('statusCheckResponseDialog').open && !state.refreshingRecords) {
+        renderIndividualCheckResults();
+      }
+      if (!state.refreshingRecords) renderRecords();
+      if (!state.activeStatusChecks.size) scheduleIndividualCheckResults();
+    });
+  state.activeStatusChecks.set(record._id, trackedPromise);
+  updateStatusCheckPromise();
+  if ($('statusCheckResponseDialog').open) renderIndividualCheckResults();
+  renderRecords();
   return trackedPromise;
 }
 
 async function runRecordStatusCheck(record, button) {
-  openStatusCheckResponseDialog(record);
   if (button) {
     button.disabled = true;
     button.classList.add('is-checking');
@@ -1332,10 +1543,9 @@ async function runRecordStatusCheck(record, button) {
       const retryMessage = reason === 'no response'
         ? 'No response received from voterlist server'
         : 'Voterlist server is unavailable';
-      showToast(`${retryMessage}. Retrying (${retryNumber}/${AUTOMATIC_STATUS_RETRIES})…`);
+      showToast(`${retryMessage}. Retrying (${retryNumber}/${state.workspaceSettings.automaticStatusRetries})…`);
     }, () => state.stopStatusCheckRequested);
-    if (result.cancelled || state.stopStatusCheckRequested) return;
-    showStatusResult(result.record, result.response);
+    if (result.cancelled || state.stopStatusCheckRequested) return { cancelled: true };
     const updatedRecord = {
       ...result.record,
       createdAt: record.createdAt,
@@ -1345,35 +1555,27 @@ async function runRecordStatusCheck(record, button) {
     state.records = state.records.map((item) => item._id === updatedRecord._id ? updatedRecord : item);
     state.recordsLoaded = true;
     cacheRecordsOrNotify();
-    if ($('statusCheckResponseDialog').dataset.recordId === updatedRecord._id) {
-      $('statusCheckResponseTitle').textContent = updatedRecord.fullName || 'Check response';
-      $('statusCheckRecordSummary').textContent = `NIN: ${updatedRecord.nin} · Date of birth: ${updatedRecord.dobAd} · Status: ${updatedRecord.status}`;
-      const hasResponseMessage = Boolean(batchResponseMessage(result.response));
-      renderLatestCheckResponse(
-        hasResponseMessage ? result.response : { message: 'No response received after automatic retries.' },
-        hasResponseMessage ? `HTTP ${result.response?.httpStatus ?? 'response'}` : 'No response received',
-      );
-      $('retryStatusCheckButton').hidden = !(result.noResponse || result.retryable);
-    }
     if ($('recordDetailsDialog').open
       && $('recordDetailsDialog').dataset.recordId === updatedRecord._id) {
       $('recordResponsesContent').innerHTML = renderUniqueResponses(updatedRecord.uniqueSearchResponses);
     }
     renderRecords();
+    return {
+      record: updatedRecord,
+      response: result.response,
+      error: '',
+      canRetry: result.noResponse || result.retryable || isVoterServerUnavailableResponse(result),
+    };
   } catch (error) {
-    if (state.stopStatusCheckRequested || error.code === 'STATUS_CHECK_STOPPED') return;
-    if ($('statusCheckResponseDialog').dataset.recordId === record._id) {
-      renderLatestCheckResponse({
-        httpStatus: error.status ?? null,
-        body: error.response ?? { error: error.message },
-      }, 'Status check failed');
-      $('retryStatusCheckButton').hidden = !isRetryableStatusCheckError(error);
-    }
+    if (state.stopStatusCheckRequested || error.code === 'STATUS_CHECK_STOPPED') return { cancelled: true };
     showToast(error.message, true);
+    return {
+      record,
+      response: error.response,
+      error: error.message,
+      canRetry: isRetryableStatusCheckError(error),
+    };
   } finally {
-    if ($('statusCheckResponseDialog').dataset.recordId === record._id) {
-      $('statusCheckResponseDialog').dataset.checking = 'false';
-    }
     if (button) {
       button.disabled = false;
       button.classList.remove('is-checking');
@@ -1583,9 +1785,9 @@ async function runBatchChecks(records) {
         if (resultEntry) {
           resultEntry.response = {
             error: 'NID server did not respond. Automatically retrying.',
-            retry: `${retryNumber}/${AUTOMATIC_STATUS_RETRIES}`,
+            retry: `${retryNumber}/${state.workspaceSettings.automaticStatusRetries}`,
           };
-          $('checkAllProgressText').textContent = `Retrying ${record.fullName} (${retryNumber}/${AUTOMATIC_STATUS_RETRIES})…`;
+          $('checkAllProgressText').textContent = `Retrying ${record.fullName} (${retryNumber}/${state.workspaceSettings.automaticStatusRetries})…`;
           renderBatchResults();
         }
       }, () => state.stopBatchRequested);
@@ -1635,6 +1837,9 @@ async function runBatchChecks(records) {
     if (!state.refreshingRecords) showToast(`Check all stopped: ${checked} checked, ${remaining} remaining.`);
   } else {
     showToast(`Check all complete: ${checked} checked, ${failed} failed.`, failed > 0);
+  }
+  if (!state.refreshingRecords && !$('checkAllDialog').open) {
+    $('checkAllDialog').showModal();
   }
 }
 
@@ -1716,30 +1921,121 @@ function printRecord(record) {
 }
 
 function updateMultiplePrintSelection() {
-  const checkboxes = [...$('multiplePrintRecords').querySelectorAll('[data-print-select]')];
-  const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+  const rows = [...$('multiplePrintRecords').querySelectorAll('[data-print-select]')];
+  const selectedCount = rows.filter((row) => row.getAttribute('aria-pressed') === 'true').length;
   $('selectedPrintCount').textContent = `${selectedCount} selected`;
   $('printSelectedRecordsButton').disabled = selectedCount === 0;
-  $('selectAllPrintRecords').checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
-  $('selectAllPrintRecords').indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+  const visible = rows.filter((row) => !row.hidden);
+  const allVisibleSelected = visible.length > 0
+    && visible.every((row) => row.getAttribute('aria-pressed') === 'true');
+  $('selectAllPrintRecords').setAttribute('aria-pressed', String(allVisibleSelected));
+}
+
+const BULK_DATE_PERIODS = [
+  { value: 'ALL', label: 'All' },
+  { value: 'TODAY', label: 'Today' },
+  { value: 'YESTERDAY', label: 'Yesterday' },
+  { value: 'THIS_WEEK', label: 'This week' },
+  { value: 'THIS_MONTH', label: 'This month' },
+  { value: 'THIS_YEAR', label: 'This year' },
+];
+
+function renderBulkDateFilters(container, records, activePeriod) {
+  container.innerHTML = BULK_DATE_PERIODS.map((period) => {
+    const count = records.filter((record) => matchesDatePeriod(record, period.value)).length;
+    return `
+      <button class="bulk-date-filter${activePeriod === period.value ? ' active' : ''}" type="button" data-bulk-period="${period.value}" aria-pressed="${activePeriod === period.value}">
+        ${period.label}<strong>${count}</strong>
+      </button>
+    `;
+  }).join('');
+}
+
+function filterBulkRecords(container, query, period = 'ALL') {
+  const recordsById = new Map(state.records.map((record) => [record._id, record]));
+  container.querySelectorAll('.multiple-print-row').forEach((row) => {
+    const record = recordsById.get(row.dataset.recordId);
+    row.hidden = !record
+      || !matchesRecordSearch(record, query)
+      || !matchesDatePeriod(record, period);
+  });
+}
+
+function renderBulkRecordOptions(container, records, attribute) {
+  container.innerHTML = records.length
+    ? records.map((record) => `
+      <button class="multiple-print-row" type="button" data-record-id="${escapeHtml(record._id)}" ${attribute}="${escapeHtml(record._id)}" aria-pressed="false">
+        <span><strong>${escapeHtml(record.fullName)}</strong><small>${escapeHtml(record.nin)} · ${escapeHtml(record.mobile)} · ${escapeHtml(formatBsDate(record.createdAt))} BS</small></span>
+      </button>
+    `).join('')
+    : '<p class="multiple-print-empty">No records are available.</p>';
 }
 
 function openMultiplePrintDialog() {
   const container = $('multiplePrintRecords');
-  if (!state.records.length) {
-    container.innerHTML = '<p class="multiple-print-empty">No records are available to print.</p>';
-  } else {
-    container.innerHTML = state.records.map((record) => `
-      <label class="multiple-print-row">
-        <input type="checkbox" data-print-select="${escapeHtml(record._id)}" />
-        <span><strong>${escapeHtml(record.fullName)}</strong><small>${escapeHtml(record.nin)} · ${escapeHtml(formatBsDate(record.createdAt))} BS</small></span>
-      </label>
-    `).join('');
-  }
-  $('selectAllPrintRecords').checked = false;
-  $('selectAllPrintRecords').indeterminate = false;
+  renderBulkRecordOptions(container, state.records, 'data-print-select');
+  $('multiplePrintSearch').value = '';
+  $('multiplePrintDialog').dataset.datePeriod = 'ALL';
+  renderBulkDateFilters($('multiplePrintDateFilters'), state.records, 'ALL');
+  filterBulkRecords(container, '', 'ALL');
+  $('selectAllPrintRecords').setAttribute('aria-pressed', 'false');
   updateMultiplePrintSelection();
   $('multiplePrintDialog').showModal();
+}
+
+function updateMultipleDeleteSelection() {
+  const rows = [...$('multipleDeleteRecords').querySelectorAll('[data-delete-select]')];
+  const selectedCount = rows.filter((row) => row.getAttribute('aria-pressed') === 'true').length;
+  const visible = rows.filter((row) => !row.hidden);
+  const allVisibleSelected = visible.length > 0
+    && visible.every((row) => row.getAttribute('aria-pressed') === 'true');
+  $('selectedDeleteCount').textContent = `${selectedCount} selected`;
+  $('selectAllDeleteRecords').setAttribute('aria-pressed', String(allVisibleSelected));
+  $('confirmMultipleDeleteButton').disabled = selectedCount === 0;
+}
+
+function openMultipleDeleteDialog() {
+  renderBulkRecordOptions($('multipleDeleteRecords'), state.records, 'data-delete-select');
+  $('multipleDeleteSearch').value = '';
+  $('multipleDeleteDialog').dataset.datePeriod = 'ALL';
+  renderBulkDateFilters($('multipleDeleteDateFilters'), state.records, 'ALL');
+  filterBulkRecords($('multipleDeleteRecords'), '', 'ALL');
+  $('selectAllDeleteRecords').setAttribute('aria-pressed', 'false');
+  updateMultipleDeleteSelection();
+  $('multipleDeleteDialog').showModal();
+}
+
+async function deleteSelectedRecords(event) {
+  event.preventDefault();
+  const recordIds = [...$('multipleDeleteRecords').querySelectorAll('[data-delete-select][aria-pressed="true"]')]
+    .map((row) => row.dataset.deleteSelect);
+  const button = $('submitMultipleDeletePasswordButton');
+  const message = $('multipleDeleteMessage');
+  if (!recordIds.length) return;
+  button.disabled = true;
+  message.textContent = '';
+  try {
+    const result = await apiRequest('/api/records', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        recordIds,
+        password: $('multipleDeletePassword').value,
+      }),
+    });
+    const deletedIds = new Set(result.recordIds);
+    state.records = state.records.filter((record) => !deletedIds.has(record._id));
+    state.recordsLoaded = true;
+    cacheRecordsOrNotify();
+    renderRecords();
+    $('multipleDeletePasswordDialog').close();
+    $('multipleDeleteDialog').close();
+    showToast(`${result.recordIds.length} voter record${result.recordIds.length === 1 ? '' : 's'} and associated histor${result.recordIds.length === 1 ? 'y' : 'ies'} deleted.`);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    updateMultipleDeleteSelection();
+  }
 }
 
 function animateToolbarAction(button) {
@@ -1872,6 +2168,7 @@ async function initializeApp() {
   }
 
   loadRecordColumnPreferences();
+  renderRecordColumnSettings();
   loadCachedWorkspaceSettings();
   $('loginForm').addEventListener('submit', handleLogin);
   wireRecordEntryForm($('recordForm'), 'standard');
@@ -1886,6 +2183,7 @@ async function initializeApp() {
     setTab('entry');
   });
   $('settingsButton').addEventListener('click', () => {
+    renderSettingsAccess();
     $('settingsDialog').showModal();
   });
   $('openPasswordDialogButton').addEventListener('click', () => {
@@ -1893,13 +2191,23 @@ async function initializeApp() {
     $('passwordDialog').showModal();
   });
   $('openWorkspaceSettingsButton').addEventListener('click', () => {
-    $('workspacePasswordForm').reset();
-    $('workspacePasswordMessage').textContent = '';
-    $('settingsDialog').close();
-    $('workspacePasswordDialog').showModal();
+    $('hideEntryTab').checked = state.workspaceSettings.hideEntryTab;
+    $('hideOldEntryTab').checked = state.workspaceSettings.hideOldEntryTab;
+    $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
+    $('hidePrintMultipleButton').checked = state.workspaceSettings.hidePrintMultipleButton;
+    $('hideDeleteMultipleButton').checked = state.workspaceSettings.hideDeleteMultipleButton;
+    $('hideRecordDeleteButton').checked = state.workspaceSettings.hideRecordDeleteButton;
+    $('workspaceSettingsDialog').showModal();
+  });
+  $('openRetrySettingsButton').addEventListener('click', () => {
+    $('automaticStatusRetries').value = String(state.workspaceSettings.automaticStatusRetries);
+    $('retrySettingsMessage').textContent = '';
+    $('retrySettingsDialog').showModal();
   });
   $('workspacePasswordForm').addEventListener('submit', verifyWorkspaceAdminPassword);
+  $('recordColumnsOptions').addEventListener('click', saveColumnSettings);
   $('workspaceSettingsForm').addEventListener('submit', saveWorkspaceSettings);
+  $('retrySettingsForm').addEventListener('submit', saveRetrySettings);
   $('passwordForm').addEventListener('submit', handlePasswordChange);
   $('passwordForm').querySelectorAll('[data-password-toggle]').forEach((toggle) => {
     toggle.addEventListener('click', () => {
@@ -1912,23 +2220,80 @@ async function initializeApp() {
       toggle.title = `${isVisible ? 'Show' : 'Hide'} password`;
     });
   });
-  $('cancelSettingsButton').addEventListener('click', () => $('settingsDialog').close());
+  const closeSettingsSession = () => {
+    document.querySelectorAll('.settings-flow-dialog[open]').forEach((dialog) => dialog.close());
+    state.settingsUnlocked = false;
+    renderSettingsAccess();
+  };
+  $('cancelSettingsButton').addEventListener('click', closeSettingsSession);
   $('cancelPasswordButton').addEventListener('click', () => $('passwordDialog').close());
-  $('cancelWorkspacePasswordButton').addEventListener('click', () => $('workspacePasswordDialog').close());
   $('cancelWorkspaceSettingsButton').addEventListener('click', () => $('workspaceSettingsDialog').close());
+  $('cancelRetrySettingsButton').addEventListener('click', () => $('retrySettingsDialog').close());
+  document.querySelectorAll('[data-settings-back]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const dialog = button.closest('dialog');
+      if (!dialog) return;
+      if (dialog.id === 'settingsDialog') {
+        closeSettingsSession();
+        return;
+      }
+      dialog.close();
+      if (state.settingsUnlocked && !$('settingsDialog').open) $('settingsDialog').showModal();
+    });
+  });
   $('closeRegistrationAnalyticsButton').addEventListener('click', () => $('registrationAnalyticsDialog').close());
   $('registrationAnalyticsDialog').addEventListener('click', (event) => {
     if (event.target === $('registrationAnalyticsDialog')) $('registrationAnalyticsDialog').close();
   });
   $('closeRecordDetailsButton').addEventListener('click', () => $('recordDetailsDialog').close());
   $('closeStatusCheckResponseButton').addEventListener('click', () => $('statusCheckResponseDialog').close());
-  $('retryStatusCheckButton').addEventListener('click', () => {
-    const recordId = $('statusCheckResponseDialog').dataset.recordId;
-    const record = state.records.find((item) => item._id === recordId);
-    if (record) void checkRecordStatus(record, null);
+  $('latestCheckResponseContent').addEventListener('click', (event) => {
+    const retryButton = event.target.closest('[data-retry-check]');
+    if (!retryButton) return;
+    const record = state.records.find((item) => item._id === retryButton.dataset.retryCheck);
+    if (!record) return;
+    state.retryingIndividualChecks.add(record._id);
+    window.clearTimeout(state.individualCheckOpenTimer);
+    state.individualCheckOpenTimer = null;
+    state.individualCheckResults = state.individualCheckResults
+      .filter((item) => item.record?._id !== record._id);
+    void checkRecordStatus(record, null).finally(() => {
+      state.retryingIndividualChecks.delete(record._id);
+      if ($('statusCheckResponseDialog').open) renderIndividualCheckResults();
+    });
+  });
+  $('retryUnavailableChecksButton').addEventListener('click', async () => {
+    const recordIds = state.individualCheckResults
+      .filter((result) => !result.pending && isExactNidServerUnavailableResponse(result))
+      .map((result) => result.record?._id)
+      .filter((recordId) => recordId && !state.activeStatusChecks.has(recordId));
+    const retries = recordIds
+      .map((recordId) => state.records.find((item) => item._id === recordId))
+      .filter(Boolean);
+    if (!retries.length) return;
+    state.retryingUnavailableChecks = true;
+    for (const record of retries) state.retryingIndividualChecks.add(record._id);
+    const retryRecordIds = new Set(retries.map((record) => record._id));
+    state.individualCheckResults = state.individualCheckResults
+      .filter((result) => !retryRecordIds.has(result.record?._id));
+    renderIndividualCheckResults();
+    try {
+      await Promise.all(retries.map((record) => checkRecordStatus(record, null)));
+    } finally {
+      state.retryingUnavailableChecks = false;
+      for (const record of retries) state.retryingIndividualChecks.delete(record._id);
+      if ($('statusCheckResponseDialog').open) renderIndividualCheckResults();
+    }
   });
   $('statusCheckResponseDialog').addEventListener('click', (event) => {
     if (event.target === $('statusCheckResponseDialog')) $('statusCheckResponseDialog').close();
+  });
+  $('statusCheckResponseDialog').addEventListener('close', () => {
+    if (state.activeStatusChecks.size) return;
+    window.clearTimeout(state.individualCheckOpenTimer);
+    state.individualCheckOpenTimer = null;
+    state.individualCheckResults = [];
+    renderRecords();
   });
   $('visitRecordQrButton').addEventListener('click', () => {
     const record = state.records.find((item) => item._id === $('recordDetailsDialog').dataset.recordId);
@@ -1953,39 +2318,75 @@ async function initializeApp() {
   $('settingsDialog').addEventListener('click', (event) => {
     if (event.target === $('settingsDialog')) $('settingsDialog').close();
   });
+  $('settingsDialog').addEventListener('close', () => {
+    state.settingsUnlocked = false;
+    renderSettingsAccess();
+  });
   $('passwordDialog').addEventListener('click', (event) => {
     if (event.target === $('passwordDialog')) $('passwordDialog').close();
-  });
-  $('workspacePasswordDialog').addEventListener('click', (event) => {
-    if (event.target === $('workspacePasswordDialog')) $('workspacePasswordDialog').close();
-  });
-  $('workspacePasswordDialog').addEventListener('close', () => {
-    $('workspacePasswordForm').reset();
-    $('workspacePasswordMessage').textContent = '';
   });
   $('workspaceSettingsDialog').addEventListener('click', (event) => {
     if (event.target === $('workspaceSettingsDialog')) $('workspaceSettingsDialog').close();
   });
+  $('retrySettingsDialog').addEventListener('click', (event) => {
+    if (event.target === $('retrySettingsDialog')) $('retrySettingsDialog').close();
+  });
   $('recordsSearch').addEventListener('input', renderRecords);
-  $('recordColumnsButton').addEventListener('click', () => {
-    $('settingsDialog').close();
-    openColumnSettings();
+  $('deleteRecordForm').addEventListener('submit', handleDeleteRecord);
+  $('cancelDeleteRecordButton').addEventListener('click', () => $('deleteRecordDialog').close());
+  $('deleteRecordDialog').addEventListener('close', () => {
+    $('deleteRecordForm').reset();
+    $('deleteRecordMessage').textContent = '';
+    delete $('deleteRecordDialog').dataset.recordId;
+  });
+  $('deleteRecordDialog').addEventListener('click', (event) => {
+    if (event.target === $('deleteRecordDialog')) $('deleteRecordDialog').close();
   });
   $('backupRecordsButton').addEventListener('click', () => void backupRecords());
   $('printMultipleButton').addEventListener('click', () => {
     animateToolbarAction($('printMultipleButton'));
     openMultiplePrintDialog();
   });
-  $('selectAllPrintRecords').addEventListener('change', (event) => {
-    $('multiplePrintRecords').querySelectorAll('[data-print-select]').forEach((checkbox) => {
-      checkbox.checked = event.currentTarget.checked;
+  $('multiplePrintSearch').addEventListener('input', (event) => {
+    filterBulkRecords(
+      $('multiplePrintRecords'),
+      event.currentTarget.value,
+      $('multiplePrintDialog').dataset.datePeriod || 'ALL',
+    );
+    updateMultiplePrintSelection();
+  });
+  $('multiplePrintSearchButton').addEventListener('click', () => {
+    filterBulkRecords(
+      $('multiplePrintRecords'),
+      $('multiplePrintSearch').value,
+      $('multiplePrintDialog').dataset.datePeriod || 'ALL',
+    );
+    updateMultiplePrintSelection();
+  });
+  $('multiplePrintDateFilters').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-bulk-period]');
+    if (!button) return;
+    $('multiplePrintDialog').dataset.datePeriod = button.dataset.bulkPeriod;
+    renderBulkDateFilters($('multiplePrintDateFilters'), state.records, button.dataset.bulkPeriod);
+    filterBulkRecords($('multiplePrintRecords'), $('multiplePrintSearch').value, button.dataset.bulkPeriod);
+    updateMultiplePrintSelection();
+  });
+  $('selectAllPrintRecords').addEventListener('click', (event) => {
+    const shouldSelect = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+    $('multiplePrintRecords').querySelectorAll('[data-print-select]').forEach((row) => {
+      if (!row.hidden) row.setAttribute('aria-pressed', String(shouldSelect));
     });
     updateMultiplePrintSelection();
   });
-  $('multiplePrintRecords').addEventListener('change', updateMultiplePrintSelection);
+  $('multiplePrintRecords').addEventListener('click', (event) => {
+    const row = event.target.closest('[data-print-select]');
+    if (!row) return;
+    row.setAttribute('aria-pressed', String(row.getAttribute('aria-pressed') !== 'true'));
+    updateMultiplePrintSelection();
+  });
   $('printSelectedRecordsButton').addEventListener('click', () => {
-    const selectedIds = new Set([...$('multiplePrintRecords').querySelectorAll('[data-print-select]:checked')]
-      .map((checkbox) => checkbox.dataset.printSelect));
+    const selectedIds = new Set([...$('multiplePrintRecords').querySelectorAll('[data-print-select][aria-pressed="true"]')]
+      .map((row) => row.dataset.printSelect));
     const selectedRecords = state.records.filter((record) => selectedIds.has(record._id));
     if (!selectedRecords.length) {
       showToast('Select at least one record to print.', true);
@@ -1998,10 +2399,63 @@ async function initializeApp() {
   $('multiplePrintDialog').addEventListener('click', (event) => {
     if (event.target === $('multiplePrintDialog')) $('multiplePrintDialog').close();
   });
-  $('saveColumnSettingsButton').addEventListener('click', saveColumnSettings);
-  $('cancelColumnSettingsButton').addEventListener('click', () => $('recordColumnsDialog').close());
-  $('recordColumnsDialog').addEventListener('click', (event) => {
-    if (event.target === $('recordColumnsDialog')) $('recordColumnsDialog').close();
+  $('deleteMultipleButton').addEventListener('click', openMultipleDeleteDialog);
+  $('multipleDeleteSearch').addEventListener('input', (event) => {
+    filterBulkRecords(
+      $('multipleDeleteRecords'),
+      event.currentTarget.value,
+      $('multipleDeleteDialog').dataset.datePeriod || 'ALL',
+    );
+    updateMultipleDeleteSelection();
+  });
+  $('multipleDeleteSearchButton').addEventListener('click', () => {
+    filterBulkRecords(
+      $('multipleDeleteRecords'),
+      $('multipleDeleteSearch').value,
+      $('multipleDeleteDialog').dataset.datePeriod || 'ALL',
+    );
+    updateMultipleDeleteSelection();
+  });
+  $('multipleDeleteDateFilters').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-bulk-period]');
+    if (!button) return;
+    $('multipleDeleteDialog').dataset.datePeriod = button.dataset.bulkPeriod;
+    renderBulkDateFilters($('multipleDeleteDateFilters'), state.records, button.dataset.bulkPeriod);
+    filterBulkRecords($('multipleDeleteRecords'), $('multipleDeleteSearch').value, button.dataset.bulkPeriod);
+    updateMultipleDeleteSelection();
+  });
+  $('multipleDeleteRecords').addEventListener('click', (event) => {
+    const row = event.target.closest('[data-delete-select]');
+    if (!row) return;
+    row.setAttribute('aria-pressed', String(row.getAttribute('aria-pressed') !== 'true'));
+    updateMultipleDeleteSelection();
+  });
+  $('selectAllDeleteRecords').addEventListener('click', (event) => {
+    const shouldSelect = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+    $('multipleDeleteRecords').querySelectorAll('[data-delete-select]').forEach((row) => {
+      if (!row.hidden) row.setAttribute('aria-pressed', String(shouldSelect));
+    });
+    updateMultipleDeleteSelection();
+  });
+  $('confirmMultipleDeleteButton').addEventListener('click', () => {
+    if (!$('multipleDeleteRecords').querySelector('[data-delete-select][aria-pressed="true"]')) return;
+    $('multipleDeletePasswordForm').reset();
+    $('multipleDeleteMessage').textContent = '';
+    $('multipleDeletePasswordDialog').showModal();
+    $('multipleDeletePassword').focus();
+  });
+  $('multipleDeletePasswordForm').addEventListener('submit', (event) => void deleteSelectedRecords(event));
+  $('cancelMultipleDeletePasswordButton').addEventListener('click', () => $('multipleDeletePasswordDialog').close());
+  $('multipleDeletePasswordDialog').addEventListener('close', () => {
+    $('multipleDeletePasswordForm').reset();
+    $('multipleDeleteMessage').textContent = '';
+  });
+  $('cancelMultipleDeleteButton').addEventListener('click', () => $('multipleDeleteDialog').close());
+  $('multipleDeleteDialog').addEventListener('close', () => {
+    if ($('multipleDeletePasswordDialog').open) $('multipleDeletePasswordDialog').close();
+  });
+  $('multipleDeleteDialog').addEventListener('click', (event) => {
+    if (event.target === $('multipleDeleteDialog')) $('multipleDeleteDialog').close();
   });
   $('datePeriodFilter').addEventListener('change', renderRecords);
   $('registrationSort').addEventListener('change', renderRecords);

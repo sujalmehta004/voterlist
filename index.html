@@ -64,16 +64,17 @@
   </main>
 
   <main id="appScreen" class="screen hidden">
-    <nav class="floating-tabs" aria-label="Voterlist sections">
-      <button class="tab active" data-tab="entry" type="button">Entry</button>
-      <button class="tab" data-tab="old-entry" type="button">Old entry</button>
-      <button class="tab" data-tab="records" type="button">Records &amp; Status <span id="pendingCount" class="count">0</span></button>
-      <button id="settingsButton" class="tab settings-tab" type="button" aria-label="Settings">Settings</button>
-    </nav>
+    <div class="floating-nav-row">
+      <p id="appMessage" class="toast hidden" role="status"></p>
+      <nav class="floating-tabs" aria-label="Voterlist sections">
+        <button class="tab active" data-tab="entry" type="button">Entry</button>
+        <button class="tab" data-tab="old-entry" type="button">Old entry</button>
+        <button class="tab" data-tab="records" type="button">Records &amp; Status <span id="pendingCount" class="count">0</span></button>
+        <button id="settingsButton" class="tab settings-tab" type="button" aria-label="Settings">Settings</button>
+      </nav>
+    </div>
 
     <div class="content">
-      <p id="appMessage" class="toast hidden" role="status"></p>
-
       <section id="tab-entry" class="tab-panel">
         <div class="panel form-panel simple-form-panel">
           <div class="simple-form-heading">
@@ -219,6 +220,9 @@
                 <button id="printMultipleButton" class="button toolbar-tool-action toolbar-icon-only print-tool-action" type="button" aria-label="Print multiple" title="Print multiple">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7zM17 11h.01"/></svg>
                 </button>
+                <button id="deleteMultipleButton" class="button toolbar-icon-only delete-multiple-toolbar-button" type="button" aria-label="Delete multiple records" title="Delete multiple records">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg>
+                </button>
                 <button id="checkAllButton" class="button check-all-action toolbar-icon-only" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg>
                 </button>
@@ -268,11 +272,14 @@
     </form>
     <p class="eyebrow">BULK PRINT</p>
     <h2>Select records to print</h2>
+    <label class="bulk-record-search-label" for="multiplePrintSearch">Search records</label>
+    <div class="bulk-search-row">
+      <input id="multiplePrintSearch" class="bulk-record-search" type="search" placeholder="Search by name, NIN, or mobile" />
+      <button id="multiplePrintSearchButton" class="button subtle" type="button">Search</button>
+    </div>
+    <div id="multiplePrintDateFilters" class="bulk-date-filters" role="group" aria-label="Filter print records by registration date"></div>
     <div class="multiple-print-toolbar">
-      <label class="multiple-print-select-all">
-        <input id="selectAllPrintRecords" type="checkbox" />
-        <span>Select all records</span>
-      </label>
+      <button id="selectAllPrintRecords" class="multiple-print-select-all" type="button" aria-pressed="false">Select all shown records</button>
       <span id="selectedPrintCount" class="muted small-text">0 selected</span>
     </div>
     <div id="multiplePrintRecords" class="multiple-print-records"></div>
@@ -280,6 +287,48 @@
       <button id="cancelMultiplePrintButton" class="button subtle" type="button">Cancel</button>
       <button id="printSelectedRecordsButton" class="button primary" type="button" disabled>Print selected</button>
     </div>
+  </dialog>
+
+  <dialog id="multipleDeleteDialog" class="check-dialog multiple-print-dialog multiple-delete-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">BULK DELETE</p>
+    <h2>Delete selected records</h2>
+    <p class="muted small-text">Selected records and their histories will be permanently deleted. You will be asked for the admin password before deletion.</p>
+    <label class="bulk-record-search-label" for="multipleDeleteSearch">Search records</label>
+    <div class="bulk-search-row">
+      <input id="multipleDeleteSearch" class="bulk-record-search" type="search" placeholder="Search by name, NIN, or mobile" />
+      <button id="multipleDeleteSearchButton" class="button subtle" type="button">Search</button>
+    </div>
+    <div id="multipleDeleteDateFilters" class="bulk-date-filters" role="group" aria-label="Filter records to delete by registration date"></div>
+    <div class="multiple-print-toolbar">
+      <button id="selectAllDeleteRecords" class="multiple-print-select-all" type="button" aria-pressed="false">Select all shown records</button>
+      <span id="selectedDeleteCount" class="muted small-text">0 selected</span>
+    </div>
+    <div id="multipleDeleteRecords" class="multiple-print-records"></div>
+    <div class="dialog-actions">
+      <button id="cancelMultipleDeleteButton" class="button subtle" type="button">Cancel</button>
+      <button id="confirmMultipleDeleteButton" class="button delete-record-action" type="button" disabled>Delete selected</button>
+    </div>
+  </dialog>
+
+  <dialog id="multipleDeletePasswordDialog" class="check-dialog bulk-delete-password-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">CONFIRM BULK DELETE</p>
+    <h2>Enter admin password</h2>
+    <p class="muted small-text">This will permanently delete the selected records and their histories.</p>
+    <form id="multipleDeletePasswordForm" class="settings-form">
+      <label for="multipleDeletePassword">Admin password</label>
+      <input id="multipleDeletePassword" type="password" autocomplete="current-password" required />
+      <p id="multipleDeleteMessage" class="message" role="status"></p>
+      <div class="dialog-actions">
+        <button id="cancelMultipleDeletePasswordButton" class="button subtle" type="button">Cancel</button>
+        <button id="submitMultipleDeletePasswordButton" class="button delete-record-action" type="submit">Confirm delete</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="checkAllDialog" class="check-dialog batch-dialog">
@@ -295,20 +344,6 @@
     </div>
   </dialog>
 
-  <dialog id="recordColumnsDialog" class="check-dialog columns-dialog">
-    <form method="dialog" class="dialog-close-form">
-      <button class="dialog-close" type="submit" aria-label="Close">×</button>
-    </form>
-    <p class="eyebrow">TABLE DISPLAY</p>
-    <h2>Choose columns</h2>
-    <p class="muted small-text">Select which columns to show in the records table. Your choice is saved on this device.</p>
-    <div id="recordColumnsOptions" class="column-options"></div>
-    <div class="dialog-actions">
-      <button id="cancelColumnSettingsButton" class="button subtle" type="button">Cancel</button>
-      <button id="saveColumnSettingsButton" class="button primary" type="button">Save columns</button>
-    </div>
-  </dialog>
-
   <dialog id="savedRecordDialog" class="check-dialog">
     <form method="dialog" class="dialog-close-form">
       <button class="dialog-close" type="submit" aria-label="Close">×</button>
@@ -320,6 +355,21 @@
       <button id="cancelSavedRecordButton" class="button subtle" type="button">Cancel</button>
       <button id="printSavedRecordButton" class="button primary" type="button">Print A4</button>
     </div>
+  </dialog>
+
+  <dialog id="deleteRecordDialog" class="check-dialog delete-record-dialog">
+    <form id="deleteRecordForm" class="settings-form">
+      <p class="eyebrow">PERMANENT ACTION</p>
+      <h2 id="deleteRecordTitle">Delete voter record?</h2>
+      <p id="deleteRecordDescription" class="muted small-text"></p>
+      <label for="deleteRecordPassword">Admin password</label>
+      <input id="deleteRecordPassword" name="password" type="password" autocomplete="current-password" required />
+      <p id="deleteRecordMessage" class="message" role="status"></p>
+      <div class="dialog-actions">
+        <button id="cancelDeleteRecordButton" class="button subtle" type="button">Cancel</button>
+        <button id="confirmDeleteRecordButton" class="button delete-record-action" type="submit">Delete record</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="recordDetailsDialog" class="record-details-dialog">
@@ -348,9 +398,9 @@
     <p class="eyebrow">STATUS CHECK</p>
     <h2 id="statusCheckResponseTitle">Check response</h2>
     <p id="statusCheckRecordSummary" class="status-check-record-summary"></p>
-    <div id="latestCheckResponseContent" class="latest-check-response"><p class="muted small-text">Checking status…</p></div>
+    <div id="latestCheckResponseContent" class="individual-check-results"></div>
     <div class="dialog-actions">
-      <button id="retryStatusCheckButton" class="button primary hidden" type="button">Try again</button>
+      <button id="retryUnavailableChecksButton" class="button primary hidden" type="button">Retry all NID/NIN server-unavailable checks</button>
       <button id="closeStatusCheckResponseButton" class="button subtle" type="button">Close</button>
     </div>
   </dialog>
@@ -367,7 +417,8 @@
     </div>
   </dialog>
 
-  <dialog id="settingsDialog" class="check-dialog settings-dialog">
+  <dialog id="settingsDialog" class="check-dialog settings-dialog settings-flow-dialog">
+    <button class="settings-back-button" type="button" data-settings-back>← Back</button>
     <form method="dialog" class="dialog-close-form">
       <button class="dialog-close" type="submit" aria-label="Close">×</button>
     </form>
@@ -385,51 +436,75 @@
     <section class="settings-section">
       <h3>Table display</h3>
       <p class="muted small-text">Choose which record columns are shown in the database table.</p>
-      <button id="recordColumnsButton" class="button columns-tool-button" type="button">Columns</button>
+      <div id="recordColumnsOptions" class="column-setting-list"></div>
     </section>
-    <section class="settings-section">
-      <h3>Admin security</h3>
-      <p class="muted small-text">Update the password used to access this workspace.</p>
-      <button id="openPasswordDialogButton" class="button subtle" type="button">Change password</button>
+    <section id="settingsUnlockSection" class="settings-section settings-unlock-section">
+      <h3>Admin access</h3>
+      <p class="muted small-text">Enter the admin password below to access the remaining settings for this session.</p>
+      <form id="workspacePasswordForm" class="settings-form">
+        <div class="field">
+          <label for="workspaceAdminPassword">Admin password</label>
+          <input id="workspaceAdminPassword" type="password" autocomplete="current-password" required />
+        </div>
+        <p id="workspacePasswordMessage" class="message" role="status"></p>
+        <div class="dialog-actions">
+          <button id="confirmWorkspacePasswordButton" class="button primary" type="submit">Unlock admin settings</button>
+        </div>
+      </form>
     </section>
-    <section class="settings-section">
-      <h3>Workspace settings</h3>
-      <p class="muted small-text">Control which workspace tabs are visible.</p>
-      <button id="openWorkspaceSettingsButton" class="button subtle" type="button">Workspace settings</button>
+    <div id="adminSettingsSections" class="hidden">
+      <section class="settings-section">
+        <h3>Admin security</h3>
+        <p class="muted small-text">Update the password used to access this workspace.</p>
+        <button id="openPasswordDialogButton" class="button subtle" type="button">Change password</button>
+      </section>
+      <section class="settings-section">
+        <h3>Workspace settings</h3>
+        <p class="muted small-text">Control which workspace tabs are visible.</p>
+        <button id="openWorkspaceSettingsButton" class="button subtle" type="button">Workspace settings</button>
+      </section>
+      <section class="settings-section">
+        <h3>Status check retries</h3>
+        <p class="muted small-text">Set automatic retries for temporary NID server failures.</p>
+        <button id="openRetrySettingsButton" class="button subtle" type="button">Retry count</button>
+      </section>
     </section>
     <div class="dialog-actions">
       <button id="cancelSettingsButton" class="button subtle" type="button">Close</button>
     </div>
   </dialog>
 
-  <dialog id="workspacePasswordDialog" class="check-dialog settings-dialog password-dialog">
+  <dialog id="retrySettingsDialog" class="check-dialog settings-dialog settings-flow-dialog">
+    <button class="settings-back-button" type="button" data-settings-back>← Back to settings</button>
     <form method="dialog" class="dialog-close-form">
       <button class="dialog-close" type="submit" aria-label="Close">×</button>
     </form>
-    <p class="eyebrow">ADMIN VERIFICATION</p>
-    <h2>Confirm your password</h2>
-    <p class="muted">Enter the admin password to open workspace settings.</p>
-    <form id="workspacePasswordForm" class="settings-form">
+    <p class="eyebrow">STATUS CHECK SETTINGS</p>
+    <h2>Automatic retry count</h2>
+    <p class="muted small-text">Choose 1–15 additional attempts for each record when the NID server is temporarily unavailable. This applies to individual checks and Check All.</p>
+    <form id="retrySettingsForm" class="settings-form">
       <div class="field">
-        <label for="workspaceAdminPassword">Admin password</label>
-        <input id="workspaceAdminPassword" type="password" autocomplete="current-password" required />
+        <label for="automaticStatusRetries">Additional retries per record</label>
+        <input id="automaticStatusRetries" type="number" min="1" max="15" step="1" required />
       </div>
-      <p id="workspacePasswordMessage" class="message" role="status"></p>
+      <p id="retrySettingsMessage" class="message" role="status"></p>
       <div class="dialog-actions">
-        <button id="cancelWorkspacePasswordButton" class="button subtle" type="button">Cancel</button>
-        <button id="confirmWorkspacePasswordButton" class="button primary" type="submit">Continue</button>
+        <button id="cancelRetrySettingsButton" class="button subtle" type="button">Cancel</button>
+        <button id="saveRetrySettingsButton" class="button primary" type="submit">Save retry count</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="workspaceSettingsDialog" class="check-dialog settings-dialog workspace-settings-dialog">
+  <dialog id="workspaceSettingsDialog" class="check-dialog settings-dialog workspace-settings-dialog settings-flow-dialog">
+    <button class="settings-back-button" type="button" data-settings-back>← Back to settings</button>
     <form method="dialog" class="dialog-close-form">
       <button class="dialog-close" type="submit" aria-label="Close">×</button>
     </form>
     <p class="eyebrow">WORKSPACE SETTINGS</p>
-    <h2>Tab visibility</h2>
-    <p class="muted small-text">Choose which tabs are visible. At least one workspace tab must remain visible.</p>
+    <h2>Workspace visibility</h2>
+    <p class="muted small-text">Choose which tabs and record actions are visible. At least one workspace tab must remain visible.</p>
     <form id="workspaceSettingsForm" class="settings-form">
+      <h3>Tabs</h3>
       <label class="workspace-setting-option">
         <input id="hideEntryTab" type="checkbox" />
         <span>Hide Entry tab</span>
@@ -442,6 +517,19 @@
         <input id="hideDatabaseTab" type="checkbox" />
         <span>Hide Database tab (Records &amp; Status)</span>
       </label>
+      <h3>Record actions</h3>
+      <label class="workspace-setting-option">
+        <input id="hidePrintMultipleButton" type="checkbox" />
+        <span>Hide Print multiple button</span>
+      </label>
+      <label class="workspace-setting-option">
+        <input id="hideDeleteMultipleButton" type="checkbox" />
+        <span>Hide Delete multiple button</span>
+      </label>
+      <label class="workspace-setting-option">
+        <input id="hideRecordDeleteButton" type="checkbox" />
+        <span>Hide Delete button in each record row</span>
+      </label>
       <p id="workspaceSettingsMessage" class="message" role="status"></p>
       <div class="dialog-actions">
         <button id="cancelWorkspaceSettingsButton" class="button subtle" type="button">Cancel</button>
@@ -450,7 +538,8 @@
     </form>
   </dialog>
 
-  <dialog id="passwordDialog" class="check-dialog settings-dialog password-dialog">
+  <dialog id="passwordDialog" class="check-dialog settings-dialog password-dialog settings-flow-dialog">
+    <button class="settings-back-button" type="button" data-settings-back>← Back to settings</button>
     <form method="dialog" class="dialog-close-form">
       <button class="dialog-close" type="submit" aria-label="Close">×</button>
     </form>

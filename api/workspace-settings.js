@@ -9,6 +9,12 @@ function getWorkspaceSettings(config) {
     hideEntryTab: Boolean(config?.hideEntryTab),
     hideOldEntryTab: Boolean(config?.hideOldEntryTab),
     hideDatabaseTab: Boolean(config?.hideDatabaseTab),
+    hidePrintMultipleButton: Boolean(config?.hidePrintMultipleButton),
+    hideDeleteMultipleButton: Boolean(config?.hideDeleteMultipleButton),
+    hideRecordDeleteButton: Boolean(config?.hideRecordDeleteButton),
+    automaticStatusRetries: Number.isInteger(config?.automaticStatusRetries)
+      ? config.automaticStatusRetries
+      : 3,
   };
 }
 
@@ -30,8 +36,14 @@ module.exports = async function workspaceSettings(req, res) {
     if (req.method === 'PUT') {
       if (typeof body.hideEntryTab !== 'boolean'
         || typeof body.hideOldEntryTab !== 'boolean'
-        || typeof body.hideDatabaseTab !== 'boolean') {
-        return sendJson(res, 400, { error: 'Choose whether to hide each workspace tab.' });
+        || typeof body.hideDatabaseTab !== 'boolean'
+        || typeof body.hidePrintMultipleButton !== 'boolean'
+        || typeof body.hideDeleteMultipleButton !== 'boolean'
+        || typeof body.hideRecordDeleteButton !== 'boolean'
+        || !Number.isInteger(body.automaticStatusRetries)
+        || body.automaticStatusRetries < 1
+        || body.automaticStatusRetries > 15) {
+        return sendJson(res, 400, { error: 'Workspace visibility settings or automatic retry count are invalid.' });
       }
       if (body.hideEntryTab && body.hideOldEntryTab && body.hideDatabaseTab) {
         return sendJson(res, 400, { error: 'At least one workspace tab must remain visible.' });
@@ -70,6 +82,10 @@ module.exports = async function workspaceSettings(req, res) {
           hideEntryTab: body.hideEntryTab,
           hideOldEntryTab: body.hideOldEntryTab,
           hideDatabaseTab: body.hideDatabaseTab,
+          hidePrintMultipleButton: body.hidePrintMultipleButton,
+          hideDeleteMultipleButton: body.hideDeleteMultipleButton,
+          hideRecordDeleteButton: body.hideRecordDeleteButton,
+          automaticStatusRetries: body.automaticStatusRetries,
         },
         $setOnInsert: { key: 'default' },
       },

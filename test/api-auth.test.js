@@ -8,6 +8,8 @@ const {
   setSessionCookie,
 } = require('../lib/auth');
 const Config = require('../lib/models/Config');
+const VoterlistData = require('../lib/models/VoterlistData');
+const VoterlistHistory = require('../lib/models/VoterlistHistory');
 const authApi = require('../api/auth');
 const workspaceSettingsApi = require('../api/workspace-settings');
 const recordsApi = require('../api/records');
@@ -40,7 +42,7 @@ async function invoke(handler, req) {
   return res;
 }
 
-async function withSessionDatabase(callback, sessionVersion = 0) {
+async function withSessionDatabase(callback, sessionVersion = 0, adminPassword = '') {
   const previousMongoUri = process.env.MONGODB_URI;
   const originalConnect = mongoose.connect;
   const originalFindOne = Config.findOne;
@@ -55,7 +57,7 @@ async function withSessionDatabase(callback, sessionVersion = 0) {
   mongoose.connect = async () => ({});
   Config.findOne = () => ({
     select() { return this; },
-    async lean() { return { sessionVersion }; },
+    async lean() { return { sessionVersion, adminUnlockPassword: adminPassword }; },
   });
   try {
     return await callback();
@@ -116,6 +118,94 @@ test('management APIs reject requests without an admin session', async () => {
     method: 'POST',
     url: '/api/workspace-settings',
   })).statusCode, 401);
+  assert.equal((await invoke(recordsApi, {
+    ...request,
+    method: 'DELETE',
+    url: '/api/records',
+    body: { recordId: '507f1f77bcf86cd799439011', password: 'admin-password' },
+  })).statusCode, 401);
+});
+
+test('record deletion requires the admin password on every request', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const cookieResponse = mockResponse();
+  setSessionCookie(cookieResponse, createSession());
+  const request = {
+    method: 'DELETE',
+    url: '/api/records',
+    headers: { cookie: cookieResponse.headers['Set-Cookie'].split(';')[0] },
+    body: { recordId: '507f1f77bcf86cd799439011', password: '' },
+  };
+
+  await withSessionDatabase(async () => {
+    const missingPassword = await invoke(recordsApi, request);
+    assert.equal(missingPassword.statusCode, 400);
+    assert.match(missingPassword.body.error, /enter the admin password/i);
+  });
+
+  await withSessionDatabase(async () => {
+    const wrongPassword = await invoke(recordsApi, {
+      ...request,
+      body: {
+        recordIds: [
+          '507f1f77bcf86cd799439011',
+          '507f1f77bcf86cd799439012',
+        ],
+        password: 'incorrect-password',
+      },
+    });
+    assert.equal(wrongPassword.statusCode, 401);
+    assert.match(wrongPassword.body.error, /password is incorrect/i);
+  }, 0, 'correct-admin-password');
+});
+
+test('record deletion removes selected records and their history after password verification', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const cookieResponse = mockResponse();
+  setSessionCookie(cookieResponse, createSession());
+  const recordIds = [
+    '507f1f77bcf86cd799439011',
+    '507f1f77bcf86cd799439012',
+  ];
+  const request = {
+    method: 'DELETE',
+    url: '/api/records',
+    headers: { cookie: cookieResponse.headers['Set-Cookie'].split(';')[0] },
+    body: { recordIds, password: 'correct-admin-password' },
+  };
+  const originalFind = VoterlistData.find;
+  const originalDeleteRecords = VoterlistData.deleteMany;
+  const originalDeleteHistory = VoterlistHistory.deleteMany;
+  let removedRecordIds;
+  let removedHistoryIds;
+  VoterlistData.find = () => ({
+    select() { return this; },
+    async lean() { return recordIds.map((_id) => ({ _id })); },
+  });
+  VoterlistData.deleteMany = async ({ _id }) => {
+    removedRecordIds = _id.$in;
+    return { deletedCount: recordIds.length };
+  };
+  VoterlistHistory.deleteMany = async ({ recordId }) => {
+    removedHistoryIds = recordId.$in;
+    return { deletedCount: recordIds.length };
+  };
+
+  try {
+    const response = await withSessionDatabase(
+      () => invoke(recordsApi, request),
+      0,
+      'correct-admin-password',
+    );
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { deleted: true, recordIds });
+    assert.deepEqual(removedRecordIds, recordIds);
+    assert.deepEqual(removedHistoryIds, recordIds);
+  } finally {
+    VoterlistData.find = originalFind;
+    VoterlistData.deleteMany = originalDeleteRecords;
+    VoterlistHistory.deleteMany = originalDeleteHistory;
+  }
 });
 
 test('workspace settings require valid visibility values and keep one tab visible', async () => {
@@ -128,7 +218,15 @@ test('workspace settings require valid visibility values and keep one tab visibl
       method: 'PUT',
       url: '/api/workspace-settings',
       headers: { cookie },
-      body: { hideEntryTab: true, hideOldEntryTab: true, hideDatabaseTab: true },
+      body: {
+        hideEntryTab: true,
+        hideOldEntryTab: true,
+        hideDatabaseTab: true,
+        hidePrintMultipleButton: false,
+        hideDeleteMultipleButton: false,
+        hideRecordDeleteButton: false,
+        automaticStatusRetries: 3,
+      },
     };
 
     const bothHidden = await invoke(workspaceSettingsApi, request);
@@ -137,10 +235,34 @@ test('workspace settings require valid visibility values and keep one tab visibl
 
     const invalidValues = await invoke(workspaceSettingsApi, {
       ...request,
-      body: { hideEntryTab: 'true', hideOldEntryTab: false, hideDatabaseTab: false },
+      body: {
+        hideEntryTab: 'true',
+        hideOldEntryTab: false,
+        hideDatabaseTab: false,
+        hidePrintMultipleButton: false,
+        hideDeleteMultipleButton: false,
+        hideRecordDeleteButton: false,
+        automaticStatusRetries: 3,
+      },
     });
     assert.equal(invalidValues.statusCode, 400);
-    assert.match(invalidValues.body.error, /choose whether to hide/i);
+    assert.match(invalidValues.body.error, /visibility settings or automatic retry count/i);
+
+    for (const automaticStatusRetries of [0, 16, 1.5, '3']) {
+      const invalidRetryCount = await invoke(workspaceSettingsApi, {
+        ...request,
+        body: {
+          hideEntryTab: false,
+          hideOldEntryTab: false,
+          hideDatabaseTab: false,
+          hidePrintMultipleButton: false,
+          hideDeleteMultipleButton: false,
+          hideRecordDeleteButton: false,
+          automaticStatusRetries,
+        },
+      });
+      assert.equal(invalidRetryCount.statusCode, 400);
+    }
   });
 });
 
