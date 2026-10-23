@@ -175,7 +175,7 @@ Check All runs eligible records sequentially. Closing its modal does not cancel 
 
 - Records and history are stored in MongoDB.
 - Record-list data and visible-table column preferences are cached in browser local storage. The cached records are personal data; use only trusted browser profiles/devices and clear browser storage when appropriate.
-- The records list is fetched from MongoDB on initial load if there is no local cache. Ctrl/Cmd+R explicitly syncs it. Individual record writes and status checks still contact the server.
+- On initial page load or sign-in, cached records are shown immediately when available, then the records list is fetched from MongoDB and the local cache is updated. A browser refresh loads the latest records the same way. Ctrl/Cmd+R explicitly syncs records and clears the current forms, searches, and filters. Individual record writes and status checks also contact the server.
 - QR verification is public by design. Anyone with a valid QR link can view the information returned by `/api/public-record`, including NIN, mobile, dates of birth, status, notes, and any available voter-list/Abedan number. Share links/printouts only with authorized recipients.
 - Back up MongoDB regularly and restrict database-user permissions and network access. This app does not provide a database backup/restore interface.
 
@@ -216,7 +216,7 @@ npm test
 | QR page cannot find a record | Verify the complete token in the link and that the corresponding MongoDB record exists. |
 | Voter status check fails or retries | The external portal may be unavailable or have changed. Retry later and inspect the server/function logs for the exact upstream failure. |
 | Date conversion or printing does not work | Check connectivity to the public CDN scripts included in `index.html`. |
-| Browser shows old records | Use Ctrl/Cmd+R to sync from MongoDB; the app otherwise prefers its local browser cache. |
+| Browser shows old records | Reload the page to fetch the latest records from MongoDB; cached records display immediately while the sync runs. |
 
 ## License
 

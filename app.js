@@ -1298,7 +1298,8 @@ async function handleLogin(event) {
     $('loginPassword').value = '';
     setScreen('appScreen');
     await syncWorkspaceSettings();
-    if (!loadCachedRecords()) await loadRecords({ force: true });
+    loadCachedRecords();
+    await loadRecords({ force: true });
   } catch (error) {
     message.textContent = error.message;
   } finally {
@@ -2567,7 +2568,8 @@ async function initializeApp() {
     if (session.authenticated) {
       setScreen('appScreen');
       await syncWorkspaceSettings();
-      if (!loadCachedRecords()) await loadRecords({ force: true });
+      loadCachedRecords();
+      await loadRecords({ force: true });
     } else {
       setScreen('loginScreen');
     }
