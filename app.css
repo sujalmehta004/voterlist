@@ -208,6 +208,10 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
   background: #fff;
   border-bottom: 1px solid var(--line);
 }
+.install-app-button[hidden] { display: none !important; }
+.verify-header-actions { display: flex; align-items: center; gap: 8px; }
+.install-app-dialog { width: min(460px, calc(100% - 32px)); padding: 28px; }
+.install-app-dialog > .muted { margin: 12px 0 20px; line-height: 1.6; }
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand strong, .brand span { display: block; }
 .brand strong { font-size: 13px; }
@@ -599,6 +603,9 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 }
 
 @media (max-width: 680px) {
+  .verify-topbar { align-items: flex-start; gap: 10px; padding: 12px 4vw; }
+  .verify-header-actions { align-items: flex-end; flex-direction: column; gap: 6px; }
+  .verify-header-actions .button { padding: 7px 9px; font-size: 10px; white-space: nowrap; }
   .floating-nav-row { right: 4vw; left: 4vw; gap: 6px; }
   .floating-nav-row .toast { flex: 1 1 auto; }
   .floating-tabs { max-width: 72%; justify-content: flex-start; overflow-x: auto; }
@@ -644,6 +651,14 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 @media print {
   html, body { width: 190mm; min-height: 0; margin: 0 !important; padding: 0 !important; background: #fff; }
   body > :not(#printSheet) { display: none !important; }
+  body.printing-verification > :not(#verifyScreen) { display: none !important; }
+  body.printing-verification > #verifyScreen { display: block !important; width: 190mm; min-height: 0; margin: 0; padding: 0; }
+  body.printing-verification .verify-topbar { position: static; display: flex; justify-content: space-between; padding: 0 0 6mm; border-bottom: .3mm solid #dce6e8; box-shadow: none; }
+  body.printing-verification #downloadVoterStatusButton { display: none !important; }
+  body.printing-verification .verification-card { width: 100%; margin: 8mm 0 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+  body.printing-verification .verify-status-message,
+  body.printing-verification .verify-field { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.printing-verification .verify-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #printSheet {
     display: block !important;
     width: 190mm;

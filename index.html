@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Voterlist" />
   <meta name="description" content="International Digital Photo Studio's voterlist system for managing voter records, checking registration status, and sharing QR-code verification." />
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <meta name="googlebot" content="index, follow" />
@@ -19,6 +21,7 @@
   <meta name="twitter:description" content="Manage voter records, check registration status, and share QR-code verification." />
   <title>Voterlist System | International Digital Photo Studio</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/app.css" />
   <script type="application/ld+json">
     {
@@ -70,6 +73,7 @@
         <button class="tab active" data-tab="entry" type="button">Entry</button>
         <button class="tab" data-tab="old-entry" type="button">Old entry</button>
         <button class="tab" data-tab="records" type="button">Records &amp; Status <span id="pendingCount" class="count">0</span></button>
+        <button class="button subtle install-app-button" type="button" data-install-app hidden>Install app</button>
         <button id="settingsButton" class="tab settings-tab" type="button" aria-label="Settings">Settings</button>
       </nav>
     </div>
@@ -674,12 +678,28 @@
         <div class="brand-mark small">VS</div>
         <div><strong>Voterlist Verification</strong><span>Record details from QR code</span></div>
       </div>
+      <div class="verify-header-actions">
+        <button class="button subtle install-app-button" type="button" data-install-app hidden>Install app</button>
+        <button id="downloadVoterStatusButton" class="button primary" type="button" disabled>Download Voterlist Status</button>
+      </div>
     </header>
     <section class="panel verification-card">
       <p class="eyebrow">PUBLIC QR VERIFICATION</p>
       <div id="verifyContent"><p class="muted">Loading record…</p></div>
     </section>
   </main>
+
+  <dialog id="installAppDialog" class="check-dialog install-app-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">VOTERLIST APP</p>
+    <h2>Add Voterlist to your phone</h2>
+    <p id="installAppInstructions" class="muted">Use your browser menu to add this app to your home screen.</p>
+    <div class="dialog-actions">
+      <button class="button subtle" type="button" data-close-install-dialog>Close</button>
+    </div>
+  </dialog>
 
   <section id="printSheet" class="print-sheet" aria-hidden="true"></section>
 </body>

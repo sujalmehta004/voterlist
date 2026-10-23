@@ -29,6 +29,7 @@ const state = {
   batchResults: [],
   activeBatchResponseKey: '',
   registrationAnalyticsPeriod: '',
+  deferredInstallPrompt: null,
   selectedStatusFilter: 'NOT DONE',
   visibleRecordColumns: ['name', 'dob', 'nin', 'mobile', 'status', 'number', 'registered', 'registered-days', 'updated', 'updated-days', 'notes', 'actions'],
 };
@@ -502,6 +503,67 @@ function setScreen(screen) {
   for (const id of ['loginScreen', 'appScreen', 'verifyScreen']) {
     $(id).classList.toggle('hidden', id !== screen);
   }
+}
+
+function isInstalledAsApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+function openInstallInstructions() {
+  const userAgent = navigator.userAgent;
+  let instructions = 'Open your browser menu and choose “Install app” or “Add to Home screen”.';
+  if (/iPhone|iPad|iPod/i.test(userAgent)) {
+    instructions = 'In Safari, tap Share, then choose “Add to Home Screen” to install Voterlist.';
+  } else if (/Android/i.test(userAgent)) {
+    instructions = 'In Chrome or Brave, open the ⋮ menu and tap “Install app” or “Add to Home screen”.';
+  }
+  $('installAppInstructions').textContent = instructions;
+  $('installAppDialog').showModal();
+}
+
+function wireAppInstallation() {
+  const installButtons = [...document.querySelectorAll('[data-install-app]')];
+  const setInstallButtonsVisible = (visible) => {
+    installButtons.forEach((button) => { button.hidden = !visible; });
+  };
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  setInstallButtonsVisible(!isInstalledAsApp() && isMobile);
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    state.deferredInstallPrompt = event;
+    setInstallButtonsVisible(true);
+  });
+  window.addEventListener('appinstalled', () => {
+    state.deferredInstallPrompt = null;
+    setInstallButtonsVisible(false);
+    showToast('Voterlist app installed.');
+  });
+  installButtons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (isInstalledAsApp()) {
+        setInstallButtonsVisible(false);
+        return;
+      }
+      const installPrompt = state.deferredInstallPrompt;
+      if (!installPrompt) {
+        openInstallInstructions();
+        return;
+      }
+      state.deferredInstallPrompt = null;
+      try {
+        await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
+        if (choice.outcome !== 'accepted') openInstallInstructions();
+      } catch (error) {
+        console.error('Could not open the Voterlist app install prompt:', error);
+        openInstallInstructions();
+      }
+    });
+  });
+  document.querySelector('[data-close-install-dialog]').addEventListener('click', () => $('installAppDialog').close());
+  $('installAppDialog').addEventListener('click', (event) => {
+    if (event.target === $('installAppDialog')) $('installAppDialog').close();
+  });
 }
 
 function cacheRecords() {
@@ -2533,6 +2595,17 @@ function renderPublicRecord(record) {
       <div class="verify-field"><span>Created</span><strong>${escapeHtml(formatDate(record.createdAt))}</strong></div>
     </div>
   `;
+  $('downloadVoterStatusButton').disabled = false;
+  $('downloadVoterStatusButton').onclick = () => {
+    const previousTitle = document.title;
+    document.title = `Voterlist Status - ${record.fullName}`;
+    document.body.classList.add('printing-verification');
+    window.addEventListener('afterprint', () => {
+      document.body.classList.remove('printing-verification');
+      document.title = previousTitle;
+    }, { once: true });
+    window.setTimeout(() => window.print(), 100);
+  };
 }
 
 async function showPublicVerification(code) {
@@ -2581,6 +2654,7 @@ function wireRecordEntryForm(form, entryType) {
 }
 
 async function initializeApp() {
+  wireAppInstallation();
   const url = new URL(window.location.href);
   const routeCode = window.location.pathname.match(/^\/verify\/([^/]+)\/?$/)?.[1];
   const publicCode = url.searchParams.get('verify') || (routeCode ? decodeURIComponent(routeCode) : '');
