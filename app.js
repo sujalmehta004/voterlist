@@ -2595,17 +2595,6 @@ function renderPublicRecord(record) {
       <div class="verify-field"><span>Created</span><strong>${escapeHtml(formatDate(record.createdAt))}</strong></div>
     </div>
   `;
-  $('downloadVoterStatusButton').disabled = false;
-  $('downloadVoterStatusButton').onclick = () => {
-    const previousTitle = document.title;
-    document.title = `Voterlist Status - ${record.fullName}`;
-    document.body.classList.add('printing-verification');
-    window.addEventListener('afterprint', () => {
-      document.body.classList.remove('printing-verification');
-      document.title = previousTitle;
-    }, { once: true });
-    window.setTimeout(() => window.print(), 100);
-  };
 }
 
 async function showPublicVerification(code) {

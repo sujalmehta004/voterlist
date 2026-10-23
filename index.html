@@ -673,17 +673,14 @@
   </dialog>
 
   <main id="verifyScreen" class="screen hidden">
-    <header class="topbar verify-topbar">
-      <div class="brand">
-        <div class="brand-mark small">VS</div>
-        <div><strong>Voterlist Verification</strong><span>Record details from QR code</span></div>
-      </div>
-      <div class="verify-header-actions">
-        <button class="button subtle install-app-button" type="button" data-install-app hidden>Install app</button>
-        <button id="downloadVoterStatusButton" class="button primary" type="button" disabled>Download Voterlist Status</button>
-      </div>
-    </header>
     <section class="panel verification-card">
+      <div class="verify-install-app">
+        <button class="button primary install-app-button" type="button" data-install-app hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 15v5h14v-5"/></svg>
+          <span>Download app</span>
+        </button>
+        <p>Tap Download app to save this page to your phone as an app.</p>
+      </div>
       <p class="eyebrow">PUBLIC QR VERIFICATION</p>
       <div id="verifyContent"><p class="muted">Loading record…</p></div>
     </section>
