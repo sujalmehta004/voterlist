@@ -468,6 +468,11 @@
         <p class="muted small-text">Set automatic retries for temporary NID server failures.</p>
         <button id="openRetrySettingsButton" class="button subtle" type="button">Retry count</button>
       </section>
+      <section class="settings-section">
+        <h3>Check All request limit</h3>
+        <p class="muted small-text">Choose how many record checks Check All runs at the same time.</p>
+        <button id="openCheckAllConcurrencyButton" class="button subtle" type="button">Request limit</button>
+      </section>
     </section>
     <div class="dialog-actions">
       <button id="cancelSettingsButton" class="button subtle" type="button">Close</button>
@@ -491,6 +496,27 @@
       <div class="dialog-actions">
         <button id="cancelRetrySettingsButton" class="button subtle" type="button">Cancel</button>
         <button id="saveRetrySettingsButton" class="button primary" type="submit">Save retry count</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="checkAllConcurrencyDialog" class="check-dialog settings-dialog settings-flow-dialog">
+    <button class="settings-back-button" type="button" data-settings-back>← Back to settings</button>
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">STATUS CHECK SETTINGS</p>
+    <h2>Check All request limit</h2>
+    <p class="muted small-text">Choose how many records Check All checks concurrently. Use a lower limit to reduce simultaneous requests to the voter portal.</p>
+    <form id="checkAllConcurrencyForm" class="settings-form">
+      <div class="field">
+        <label for="checkAllConcurrency">Concurrent record checks (1–15)</label>
+        <input id="checkAllConcurrency" type="number" min="1" max="15" step="1" required />
+      </div>
+      <p id="checkAllConcurrencyMessage" class="message" role="status"></p>
+      <div class="dialog-actions">
+        <button id="cancelCheckAllConcurrencyButton" class="button subtle" type="button">Cancel</button>
+        <button id="saveCheckAllConcurrencyButton" class="button primary" type="submit">Save request limit</button>
       </div>
     </form>
   </dialog>

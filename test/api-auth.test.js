@@ -226,6 +226,7 @@ test('workspace settings require valid visibility values and keep one tab visibl
         hideDeleteMultipleButton: false,
         hideRecordDeleteButton: false,
         automaticStatusRetries: 3,
+        checkAllConcurrency: 5,
       },
     };
 
@@ -243,10 +244,11 @@ test('workspace settings require valid visibility values and keep one tab visibl
         hideDeleteMultipleButton: false,
         hideRecordDeleteButton: false,
         automaticStatusRetries: 3,
+        checkAllConcurrency: 5,
       },
     });
     assert.equal(invalidValues.statusCode, 400);
-    assert.match(invalidValues.body.error, /visibility settings or automatic retry count/i);
+    assert.match(invalidValues.body.error, /visibility, automatic retry, or Check All concurrency settings/i);
 
     for (const automaticStatusRetries of [0, 16, 1.5, '3']) {
       const invalidRetryCount = await invoke(workspaceSettingsApi, {
@@ -259,9 +261,27 @@ test('workspace settings require valid visibility values and keep one tab visibl
           hideDeleteMultipleButton: false,
           hideRecordDeleteButton: false,
           automaticStatusRetries,
+          checkAllConcurrency: 5,
         },
       });
       assert.equal(invalidRetryCount.statusCode, 400);
+    }
+
+    for (const checkAllConcurrency of [0, 16, 1.5, '5']) {
+      const invalidConcurrency = await invoke(workspaceSettingsApi, {
+        ...request,
+        body: {
+          hideEntryTab: false,
+          hideOldEntryTab: false,
+          hideDatabaseTab: false,
+          hidePrintMultipleButton: false,
+          hideDeleteMultipleButton: false,
+          hideRecordDeleteButton: false,
+          automaticStatusRetries: 3,
+          checkAllConcurrency,
+        },
+      });
+      assert.equal(invalidConcurrency.statusCode, 400);
     }
   });
 });

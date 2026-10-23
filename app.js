@@ -9,6 +9,7 @@ const state = {
     hideDeleteMultipleButton: false,
     hideRecordDeleteButton: false,
     automaticStatusRetries: 3,
+    checkAllConcurrency: 5,
   },
   checkingAll: false,
   stopBatchRequested: false,
@@ -116,6 +117,9 @@ function isValidWorkspaceSettings(settings) {
     && Number.isInteger(settings.automaticStatusRetries)
     && settings.automaticStatusRetries >= 1
     && settings.automaticStatusRetries <= 15
+    && Number.isInteger(settings.checkAllConcurrency)
+    && settings.checkAllConcurrency >= 1
+    && settings.checkAllConcurrency <= 15
     && !(settings.hideEntryTab && settings.hideOldEntryTab && settings.hideDatabaseTab);
 }
 
@@ -129,6 +133,7 @@ function normalizeWorkspaceSettings(settings) {
     hideDeleteMultipleButton: settings.hideDeleteMultipleButton ?? false,
     hideRecordDeleteButton: settings.hideRecordDeleteButton ?? false,
     automaticStatusRetries: settings.automaticStatusRetries ?? 3,
+    checkAllConcurrency: settings.checkAllConcurrency ?? 5,
   };
   return isValidWorkspaceSettings(normalized) ? normalized : null;
 }
@@ -200,6 +205,7 @@ async function saveWorkspaceSettings(event) {
     hideDeleteMultipleButton: $('hideDeleteMultipleButton').checked,
     hideRecordDeleteButton: $('hideRecordDeleteButton').checked,
     automaticStatusRetries: state.workspaceSettings.automaticStatusRetries,
+    checkAllConcurrency: state.workspaceSettings.checkAllConcurrency,
   };
   message.textContent = '';
   if (settings.hideEntryTab && settings.hideOldEntryTab && settings.hideDatabaseTab) {
@@ -285,6 +291,41 @@ async function saveRetrySettings(event) {
     }
     $('retrySettingsDialog').close();
     showToast(`Automatic retry count set to ${retries}.`);
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveCheckAllConcurrency(event) {
+  event.preventDefault();
+  const concurrency = Number($('checkAllConcurrency').value);
+  const message = $('checkAllConcurrencyMessage');
+  const button = $('saveCheckAllConcurrencyButton');
+  message.textContent = '';
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 15) {
+    message.textContent = 'Enter a whole number from 1 to 15.';
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    const result = await apiRequest('/api/workspace-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ ...state.workspaceSettings, checkAllConcurrency: concurrency }),
+    });
+    const savedSettings = normalizeWorkspaceSettings(result.settings);
+    if (!savedSettings) throw new Error('The server returned invalid Check All concurrency settings.');
+    state.workspaceSettings = savedSettings;
+    try {
+      localStorage.setItem(WORKSPACE_SETTINGS_KEY, JSON.stringify(savedSettings));
+    } catch (error) {
+      console.error('Could not cache Check All concurrency setting locally:', error);
+      showToast('Check All concurrency was saved, but could not be cached in this browser.', true);
+    }
+    $('checkAllConcurrencyDialog').close();
+    showToast(`Check All will process up to ${concurrency} records at once.`);
   } catch (error) {
     message.textContent = error.message;
   } finally {
@@ -925,7 +966,7 @@ function renderIndividualCheckResults() {
     const message = batchResponseMessage(result.response) || result.error || 'No response message returned.';
     const status = result.record ? recordStatus(result.record) : 'CHECK FAILED';
     return `
-      <article class="individual-check-result">
+      <article class="individual-check-result response-tone-${batchResponseTone(result.response)}">
         <div class="individual-check-result-heading">
           <strong>${escapeHtml(result.record?.fullName || 'Unknown record')}</strong>
           <span>${escapeHtml(status)}</span>
@@ -1641,9 +1682,12 @@ function batchResponseGroups() {
 }
 
 function batchDisplayGroups() {
+  const hiddenResponseTones = new Set(['not-found', 'portrait', 'approved']);
   return [
     { key: ALL_BATCH_GROUP_KEY, response: null, records: state.batchResults },
-    ...batchResponseGroups(),
+    ...batchResponseGroups().filter((group) => (
+      !hiddenResponseTones.has(batchResponseTone(group.response))
+    )),
   ];
 }
 
@@ -1763,63 +1807,94 @@ async function runBatchChecks(records) {
   $('cancelCheckAllButton').textContent = 'Close';
   $('cancelCheckAllButton').disabled = false;
   $('checkAllDialog').querySelector('.dialog-close').disabled = false;
+  const concurrency = Math.min(state.workspaceSettings.checkAllConcurrency, records.length);
   let checked = 0;
   let failed = 0;
-  let remaining = 0;
-  for (const record of records) {
-    if (state.stopBatchRequested) {
-      remaining = records.length - checked - failed;
-      break;
-    }
-    const resultEntry = state.batchResults.find((item) => item.record._id === record._id);
-    if (resultEntry) {
-      resultEntry.response = { message: 'Waiting for voterlist server response…' };
-      resultEntry.error = '';
-    }
-    renderBatchResults();
-    try {
-      const result = await checkStatusWithRetries({
-        nin: record.nin,
-        dobAd: record.dobAd,
-        firstname: record.fullName.trim().split(/\s+/)[0],
-      }, (retryNumber) => {
-        if (resultEntry) {
-          resultEntry.response = {
-            error: 'NID server did not respond. Automatically retrying.',
-            retry: `${retryNumber}/${state.workspaceSettings.automaticStatusRetries}`,
-          };
-          $('checkAllProgressText').textContent = `Retrying ${record.fullName} (${retryNumber}/${state.workspaceSettings.automaticStatusRetries})…`;
-          renderBatchResults();
-        }
-      }, () => state.stopBatchRequested);
-      const updatedRecord = {
-        ...result.record,
-        createdAt: record.createdAt,
-        statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1,
-        uniqueSearchResponses: cacheableSearchResponses(result.responses || []),
-      };
-      state.records = state.records.map((item) => item._id === updatedRecord._id ? updatedRecord : item);
-      state.recordsLoaded = true;
-      cacheRecordsOrNotify();
-      if (resultEntry) {
-        resultEntry.record = updatedRecord;
-        resultEntry.response = result.response ?? { message: result.record.lastCheckMessage };
-      }
-      checked += 1;
-    } catch (error) {
-      failed += 1;
-      console.error(`Could not check status for record ${record._id}:`, error);
-      if (resultEntry) {
-        resultEntry.response = { error: error.message };
-        resultEntry.error = error.message;
-      }
-    }
+  let nextRecordIndex = 0;
+  let running = 0;
+  const updateBatchProgress = () => {
     const completed = checked + failed;
     $('checkAllProgress').value = completed;
-    $('checkAllProgressText').textContent = `Checked ${completed} of ${records.length}…`;
-    renderRecords();
-    renderBatchResults();
-  }
+    $('checkAllProgressText').textContent = `Checked ${completed} of ${records.length} · ${running} in progress (${concurrency} at once)…`;
+  };
+  const checkNextRecord = async () => {
+    while (!state.stopBatchRequested) {
+      const recordIndex = nextRecordIndex;
+      nextRecordIndex += 1;
+      if (recordIndex >= records.length) return;
+      const record = records[recordIndex];
+      const resultEntry = state.batchResults.find((item) => item.record._id === record._id);
+      if (resultEntry) {
+        resultEntry.response = { message: 'Waiting for voterlist server response…' };
+        resultEntry.error = '';
+      }
+      running += 1;
+      updateBatchProgress();
+      renderBatchResults();
+      try {
+        const result = await checkStatusWithRetries({
+          nin: record.nin,
+          dobAd: record.dobAd,
+          firstname: record.fullName.trim().split(/\s+/)[0],
+        }, (retryNumber) => {
+          if (resultEntry) {
+            resultEntry.response = {
+              error: 'NID server did not respond. Automatically retrying.',
+              retry: `${retryNumber}/${state.workspaceSettings.automaticStatusRetries}`,
+            };
+            $('checkAllProgressText').textContent = `Retrying ${record.fullName} (${retryNumber}/${state.workspaceSettings.automaticStatusRetries})…`;
+            renderBatchResults();
+          }
+        }, () => state.stopBatchRequested);
+        if (result.cancelled) {
+          if (resultEntry) {
+            resultEntry.response = result.response ?? { message: 'Check stopped before completion.' };
+            resultEntry.error = resultEntry.response.message || '';
+          }
+          if (result.response) checked += 1;
+        } else {
+          const updatedRecord = {
+            ...result.record,
+            createdAt: record.createdAt,
+            statusCheckCount: result.requestCount ?? (record.statusCheckCount || 0) + 1,
+            uniqueSearchResponses: cacheableSearchResponses(result.responses || []),
+          };
+          state.records = state.records.map((item) => item._id === updatedRecord._id ? updatedRecord : item);
+          state.recordsLoaded = true;
+          cacheRecordsOrNotify();
+          if (resultEntry) {
+            resultEntry.record = updatedRecord;
+            resultEntry.response = result.response ?? { message: result.record.lastCheckMessage };
+          }
+          checked += 1;
+        }
+      } catch (error) {
+        if (state.stopBatchRequested && error.code === 'STATUS_CHECK_STOPPED') {
+          if (resultEntry) {
+            resultEntry.response = { message: 'Check stopped before completion.' };
+            resultEntry.error = '';
+          }
+        } else {
+          failed += 1;
+          console.error(`Could not check status for record ${record._id}:`, error);
+          if (resultEntry) {
+            resultEntry.response = { error: error.message };
+            resultEntry.error = error.message;
+          }
+        }
+      } finally {
+        running -= 1;
+        updateBatchProgress();
+        renderRecords();
+        renderBatchResults();
+      }
+    }
+  };
+  await Promise.all(Array.from(
+    { length: concurrency },
+    () => checkNextRecord(),
+  ));
+  const remaining = records.length - checked - failed;
 
   state.checkingAll = false;
   $('checkAllProgressText').textContent = `Finished: ${checked} checked, ${failed} failed.`;
@@ -2205,10 +2280,16 @@ async function initializeApp() {
     $('retrySettingsMessage').textContent = '';
     $('retrySettingsDialog').showModal();
   });
+  $('openCheckAllConcurrencyButton').addEventListener('click', () => {
+    $('checkAllConcurrency').value = String(state.workspaceSettings.checkAllConcurrency);
+    $('checkAllConcurrencyMessage').textContent = '';
+    $('checkAllConcurrencyDialog').showModal();
+  });
   $('workspacePasswordForm').addEventListener('submit', verifyWorkspaceAdminPassword);
   $('recordColumnsOptions').addEventListener('click', saveColumnSettings);
   $('workspaceSettingsForm').addEventListener('submit', saveWorkspaceSettings);
   $('retrySettingsForm').addEventListener('submit', saveRetrySettings);
+  $('checkAllConcurrencyForm').addEventListener('submit', saveCheckAllConcurrency);
   $('passwordForm').addEventListener('submit', handlePasswordChange);
   $('passwordForm').querySelectorAll('[data-password-toggle]').forEach((toggle) => {
     toggle.addEventListener('click', () => {
@@ -2230,6 +2311,7 @@ async function initializeApp() {
   $('cancelPasswordButton').addEventListener('click', () => $('passwordDialog').close());
   $('cancelWorkspaceSettingsButton').addEventListener('click', () => $('workspaceSettingsDialog').close());
   $('cancelRetrySettingsButton').addEventListener('click', () => $('retrySettingsDialog').close());
+  $('cancelCheckAllConcurrencyButton').addEventListener('click', () => $('checkAllConcurrencyDialog').close());
   document.querySelectorAll('[data-settings-back]').forEach((button) => {
     button.addEventListener('click', () => {
       const dialog = button.closest('dialog');

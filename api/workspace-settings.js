@@ -15,6 +15,9 @@ function getWorkspaceSettings(config) {
     automaticStatusRetries: Number.isInteger(config?.automaticStatusRetries)
       ? config.automaticStatusRetries
       : 3,
+    checkAllConcurrency: Number.isInteger(config?.checkAllConcurrency)
+      ? config.checkAllConcurrency
+      : 5,
   };
 }
 
@@ -42,8 +45,11 @@ module.exports = async function workspaceSettings(req, res) {
         || typeof body.hideRecordDeleteButton !== 'boolean'
         || !Number.isInteger(body.automaticStatusRetries)
         || body.automaticStatusRetries < 1
-        || body.automaticStatusRetries > 15) {
-        return sendJson(res, 400, { error: 'Workspace visibility settings or automatic retry count are invalid.' });
+        || body.automaticStatusRetries > 15
+        || !Number.isInteger(body.checkAllConcurrency)
+        || body.checkAllConcurrency < 1
+        || body.checkAllConcurrency > 15) {
+        return sendJson(res, 400, { error: 'Workspace visibility, automatic retry, or Check All concurrency settings are invalid.' });
       }
       if (body.hideEntryTab && body.hideOldEntryTab && body.hideDatabaseTab) {
         return sendJson(res, 400, { error: 'At least one workspace tab must remain visible.' });
@@ -86,6 +92,7 @@ module.exports = async function workspaceSettings(req, res) {
           hideDeleteMultipleButton: body.hideDeleteMultipleButton,
           hideRecordDeleteButton: body.hideRecordDeleteButton,
           automaticStatusRetries: body.automaticStatusRetries,
+          checkAllConcurrency: body.checkAllConcurrency,
         },
         $setOnInsert: { key: 'default' },
       },

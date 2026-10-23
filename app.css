@@ -358,6 +358,10 @@ tr:last-child td { border-bottom: 0; }
 .individual-check-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-content: start; gap: 12px; max-height: calc(90dvh - 210px); overflow: auto; }
 .individual-check-result { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #f8fbfb; }
 .individual-check-result-pending { border-color: #9bc7be; background: #f0f8f6; }
+.individual-check-result.response-tone-approved { border-color: #b9dfc3; background: #edf8ef; color: #315d3c; }
+.individual-check-result.response-tone-portrait { border-color: #f0d98e; background: #fff9e6; color: #6b581e; }
+.individual-check-result.response-tone-not-found { border-color: #edc1bf; background: #fff0ef; color: #82433f; }
+.individual-check-result.response-tone-server-unavailable { border-color: #d7c4f2; background: #f4efff; color: #59487b; }
 .individual-check-result-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .individual-check-result-heading strong { font-size: 13px; }
 .individual-check-result-heading span, .individual-check-result-nin { color: var(--muted); font-size: 11px; }
@@ -442,8 +446,8 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 .batch-record-row.response-tone-approved .batch-row-response { border-color: #b9dfc3; background: #edf8ef; color: #315d3c; }
 .batch-response-tab.response-tone-approved.active { border-color: #85c797; background: #e3f4e6; }
 .batch-response-tab.response-tone-portrait,
-.batch-record-row.response-tone-portrait .batch-row-response { border-color: #d9bee5; background: #f5eefa; color: #624270; }
-.batch-response-tab.response-tone-portrait.active { border-color: #bd8fd0; background: #efdef6; }
+.batch-record-row.response-tone-portrait .batch-row-response { border-color: #f0d98e; background: #fff9e6; color: #6b581e; }
+.batch-response-tab.response-tone-portrait.active { border-color: #e4c75e; background: #fff2c8; }
 .batch-response-tab.response-tone-not-found,
 .batch-record-row.response-tone-not-found .batch-row-response { border-color: #edc1bf; background: #fff0ef; color: #82433f; }
 .batch-response-tab.response-tone-not-found.active { border-color: #df9c98; background: #fde5e3; }
@@ -460,8 +464,11 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 .batch-record-row.status-row-done td:first-child { border-left: 3px solid #35a675; }
 .batch-record-row.status-row-pending td:first-child { border-left: 3px solid #e5a63b; }
 .batch-record-row.status-row-not-online td:first-child { border-left: 3px solid #e07565; }
+.batch-record-row.response-tone-approved td { background: #edf8ef; }
 .batch-record-row.response-tone-approved:hover td { background: #e4f3e7; }
-.batch-record-row.response-tone-portrait:hover td { background: #f0e6f5; }
+.batch-record-row.response-tone-portrait td { background: #fff9e6; }
+.batch-record-row.response-tone-portrait:hover td { background: #fff2c8; }
+.batch-record-row.response-tone-not-found td { background: #fff0ef; }
 .batch-record-row.response-tone-not-found:hover td { background: #fce7e5; }
 .batch-record-row.response-tone-server-unavailable:hover td { background: #eee6fb; }
 .batch-table input[type="checkbox"] { width: 16px; min-width: 16px; margin: 2px; accent-color: #456ac5; }
