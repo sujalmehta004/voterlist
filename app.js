@@ -40,6 +40,7 @@ const $ = (id) => document.getElementById(id);
 const RECORDS_CACHE_KEY = 'voterlist-records-cache-v1';
 const RECORD_COLUMNS_KEY = 'voterlist-visible-record-columns-v1';
 const WORKSPACE_SETTINGS_KEY = 'voterlist-workspace-settings-v1';
+const RECORDS_TOOLBAR_STATE_KEY = 'voterlist-records-toolbar-state-v1';
 const ALL_BATCH_GROUP_KEY = 'all-records';
 const RECORD_COLUMNS = [
   { id: 'name', label: 'Name' },
@@ -3160,6 +3161,18 @@ async function initializeApp() {
   document.querySelectorAll('.tab[data-tab]').forEach((button) => {
     button.addEventListener('click', () => setTab(button.dataset.tab));
   });
+  const recordsPanel = document.querySelector('.table-panel');
+  let recordsToolbarState = 0;
+  try {
+    const savedState = Number(localStorage.getItem(RECORDS_TOOLBAR_STATE_KEY));
+    if (Number.isInteger(savedState) && savedState >= 0 && savedState <= 2) {
+      recordsToolbarState = savedState;
+    }
+  } catch (error) {
+    console.error('Could not load the records toolbar visibility setting:', error);
+  }
+  recordsPanel.classList.toggle('filters-hidden', recordsToolbarState >= 1);
+  recordsPanel.classList.toggle('counts-hidden', recordsToolbarState >= 2);
   document.addEventListener('keydown', (event) => {
     const hasCommandKey = event.ctrlKey || event.metaKey;
     const shortcutKey = event.key.toLocaleLowerCase();
@@ -3167,12 +3180,13 @@ async function initializeApp() {
     if (hasCommandKey && shortcutKey === 'g' && appIsVisible && state.currentTab === 'records' && !event.repeat) {
       event.preventDefault();
       const controls = document.querySelector('.table-panel');
-      if (!controls.classList.contains('filters-hidden')) {
-        controls.classList.add('filters-hidden');
-      } else if (!controls.classList.contains('counts-hidden')) {
-        controls.classList.add('counts-hidden');
-      } else {
-        controls.classList.remove('filters-hidden', 'counts-hidden');
+      recordsToolbarState = (recordsToolbarState + 1) % 3;
+      controls.classList.toggle('filters-hidden', recordsToolbarState >= 1);
+      controls.classList.toggle('counts-hidden', recordsToolbarState >= 2);
+      try {
+        localStorage.setItem(RECORDS_TOOLBAR_STATE_KEY, String(recordsToolbarState));
+      } catch (error) {
+        console.error('Could not save the records toolbar visibility setting:', error);
       }
     } else if (hasCommandKey && shortcutKey === 'r' && appIsVisible) {
       event.preventDefault();
