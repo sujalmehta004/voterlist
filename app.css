@@ -213,6 +213,11 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .verify-install-app .install-app-button { flex: 0 0 auto; gap: 8px; }
 .verify-install-app .install-app-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .verify-install-app p { margin: 0; color: #46665b; font-size: 12px; line-height: 1.5; }
+.verify-page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.verify-page-toolbar .eyebrow { margin: 0; }
+.verify-page-toolbar .button { display: inline-flex; align-items: center; gap: 7px; }
+.verify-page-toolbar .button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.verify-page-toolbar .is-refreshing svg { animation: check-spin .8s linear infinite; }
 .install-app-dialog { width: min(460px, calc(100% - 32px)); padding: 28px; }
 .install-app-dialog > .muted { margin: 12px 0 20px; line-height: 1.6; }
 .brand { display: flex; align-items: center; gap: 11px; }
@@ -608,6 +613,7 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 @media (max-width: 680px) {
   .verify-install-app { align-items: flex-start; flex-direction: column; gap: 8px; margin-bottom: 18px; padding: 10px; }
   .verify-install-app .install-app-button { min-height: 36px; padding: 8px 11px; }
+  .verify-page-toolbar .button { min-height: 36px; padding: 8px 10px; }
   .floating-nav-row { right: 4vw; left: 4vw; gap: 6px; }
   .floating-nav-row .toast { flex: 1 1 auto; }
   .floating-tabs { max-width: 72%; justify-content: flex-start; overflow-x: auto; }

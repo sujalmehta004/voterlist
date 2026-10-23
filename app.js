@@ -30,6 +30,8 @@ const state = {
   activeBatchResponseKey: '',
   registrationAnalyticsPeriod: '',
   deferredInstallPrompt: null,
+  publicVerificationCode: '',
+  publicRecordRequest: null,
   selectedStatusFilter: 'NOT DONE',
   visibleRecordColumns: ['name', 'dob', 'nin', 'mobile', 'status', 'number', 'registered', 'registered-days', 'updated', 'updated-days', 'notes', 'actions'],
 };
@@ -509,6 +511,35 @@ function isInstalledAsApp() {
   return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 }
 
+function verificationInstallNoticeKey(code) {
+  return `voterlist-installed-verification-${code}`;
+}
+
+function hideVerificationInstallNotice() {
+  const notice = $('verifyInstallNotice');
+  if (!notice) return;
+  if (state.publicVerificationCode) {
+    try {
+      localStorage.setItem(verificationInstallNoticeKey(state.publicVerificationCode), 'true');
+    } catch (error) {
+      console.error('Could not remember the Voterlist app installation:', error);
+    }
+  }
+  notice.classList.add('hidden');
+}
+
+function updateVerificationInstallNotice() {
+  const notice = $('verifyInstallNotice');
+  if (!notice || !state.publicVerificationCode) return;
+  let wasInstalled = isInstalledAsApp();
+  try {
+    wasInstalled ||= localStorage.getItem(verificationInstallNoticeKey(state.publicVerificationCode)) === 'true';
+  } catch (error) {
+    console.error('Could not read the Voterlist app installation state:', error);
+  }
+  notice.classList.toggle('hidden', wasInstalled);
+}
+
 function openInstallInstructions() {
   const userAgent = navigator.userAgent;
   let instructions = 'Open your browser menu and choose “Install app” or “Add to Home screen”.';
@@ -536,6 +567,7 @@ function wireAppInstallation() {
   window.addEventListener('appinstalled', () => {
     state.deferredInstallPrompt = null;
     setInstallButtonsVisible(false);
+    hideVerificationInstallNotice();
     showToast('Voterlist app installed.');
   });
   installButtons.forEach((button) => {
@@ -553,7 +585,12 @@ function wireAppInstallation() {
       try {
         await installPrompt.prompt();
         const choice = await installPrompt.userChoice;
-        if (choice.outcome !== 'accepted') openInstallInstructions();
+        if (choice.outcome === 'accepted') {
+          setInstallButtonsVisible(false);
+          hideVerificationInstallNotice();
+        } else {
+          openInstallInstructions();
+        }
       } catch (error) {
         console.error('Could not open the Voterlist app install prompt:', error);
         openInstallInstructions();
@@ -2597,14 +2634,45 @@ function renderPublicRecord(record) {
   `;
 }
 
-async function showPublicVerification(code) {
-  setScreen('verifyScreen');
+async function refreshPublicVerification() {
+  if (!state.publicVerificationCode || state.publicRecordRequest) return state.publicRecordRequest;
+  const button = $('refreshPublicRecordButton');
+  const content = $('verifyContent');
+  button.disabled = true;
+  button.classList.add('is-refreshing');
+  content.setAttribute('aria-busy', 'true');
+  const request = (async () => {
+    try {
+      const { record } = await apiRequest(`/api/public-record?code=${encodeURIComponent(state.publicVerificationCode)}`, {
+        cache: 'no-store',
+      });
+      renderPublicRecord(record);
+    } catch (error) {
+      $('verifyContent').innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
+    }
+  })();
+  state.publicRecordRequest = request;
   try {
-    const { record } = await apiRequest(`/api/public-record?code=${encodeURIComponent(code)}`);
-    renderPublicRecord(record);
-  } catch (error) {
-    $('verifyContent').innerHTML = `<p class="message">${escapeHtml(error.message)}</p>`;
+    await request;
+  } finally {
+    if (state.publicRecordRequest === request) state.publicRecordRequest = null;
+    button.disabled = false;
+    button.classList.remove('is-refreshing');
+    content.removeAttribute('aria-busy');
   }
+}
+
+async function showPublicVerification(code) {
+  state.publicVerificationCode = code;
+  setScreen('verifyScreen');
+  updateVerificationInstallNotice();
+  $('refreshPublicRecordButton').addEventListener('click', () => void refreshPublicVerification());
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && isInstalledAsApp() && !$('verifyScreen').classList.contains('hidden')) {
+      void refreshPublicVerification();
+    }
+  });
+  await refreshPublicVerification();
 }
 
 function wireRecordEntryForm(form, entryType) {
