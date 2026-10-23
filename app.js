@@ -32,6 +32,11 @@ const state = {
   deferredInstallPrompt: null,
   publicVerificationCode: '',
   publicRecordRequest: null,
+  pendingVoterlistImport: null,
+  voterlistImportPreview: null,
+  voterlistImportCompleted: false,
+  voterlistImportInProgress: false,
+  importConfirmationResolve: null,
   selectedStatusFilter: 'NOT DONE',
   visibleRecordColumns: ['name', 'dob', 'nin', 'mobile', 'status', 'number', 'registered', 'registered-days', 'updated', 'updated-days', 'notes', 'actions'],
 };
@@ -2604,6 +2609,249 @@ async function backupRecords() {
   }
 }
 
+async function previewVoterlistImport() {
+  const fileInput = $('importRecordsFile');
+  const preview = $('importRecordsPreview');
+  const previewMessage = $('importRecordsPreviewMessage');
+  const message = $('importRecordsMessage');
+  const button = $('importRecordsButton');
+  state.pendingVoterlistImport = null;
+  state.voterlistImportPreview = null;
+  state.voterlistImportCompleted = false;
+  state.voterlistImportInProgress = false;
+  button.disabled = true;
+  preview.classList.add('hidden');
+  $('importRecordsCounts').replaceChildren();
+  previewMessage.textContent = '';
+  message.textContent = '';
+  const file = fileInput.files[0];
+  if (!file) return;
+  if (file.size > 1_000_000) {
+    message.textContent = 'The JSON backup must be smaller than 1 MB.';
+    return;
+  }
+  try {
+    const backup = JSON.parse(await file.text());
+    if (backup?.application !== 'Voterlist System'
+      || backup.formatVersion !== 1
+      || !Array.isArray(backup.records)
+      || backup.records.length < 1
+      || backup.records.length > 1000
+      || backup.recordCount !== backup.records.length) {
+      throw new Error('This is not a valid Voterlist System JSON backup or its record count does not match.');
+    }
+    previewMessage.textContent = 'Validating every record against the database…';
+    preview.classList.remove('hidden');
+    const validation = await apiRequest('/api/import-records', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'preview', backup }),
+    });
+    state.pendingVoterlistImport = backup;
+    state.voterlistImportPreview = validation;
+    previewMessage.textContent = `${file.name} — ${validation.counts.total} records checked. Select a count to compare records side by side.`;
+    renderVoterlistImportCounts(validation.counts);
+    button.disabled = validation.counts.new + validation.counts.changed === 0 || validation.counts.invalid > 0;
+    if (validation.counts.invalid > 0) {
+      message.textContent = 'Fix invalid records or QR token conflicts before importing.';
+    } else if (validation.counts.new === 0) {
+      message.textContent = validation.counts.changed === 0
+        ? 'No new or changed records to import.'
+        : '';
+    }
+  } catch (error) {
+    message.textContent = error instanceof SyntaxError
+      ? 'The selected file is not valid JSON.'
+      : error.message;
+    preview.classList.add('hidden');
+  }
+}
+
+function renderVoterlistImportCounts(counts) {
+  const countCards = [
+    { key: 'total', label: 'Total records', value: counts.total },
+    { key: 'new', label: 'New unique NINs', value: counts.new },
+    { key: 'changed', label: 'Changed matches · update', value: counts.changed },
+    { key: 'unchanged', label: 'Unchanged matches · keep', value: counts.unchanged },
+    { key: 'duplicate-file', label: 'Duplicates in file', value: counts.duplicateFile },
+    { key: 'invalid', label: 'Invalid / conflicts', value: counts.invalid },
+  ];
+  $('importRecordsCounts').innerHTML = countCards.map((card) => `
+    <button class="import-count-card import-count-${card.key}" type="button" data-import-category="${card.key}" aria-label="Show ${escapeHtml(card.label)}: ${card.value}">
+      <span>${escapeHtml(card.label)}</span><strong>${card.value}</strong>
+    </button>
+  `).join('');
+}
+
+function formatImportValue(value) {
+  if (value === undefined || value === null || value === '') return '—';
+  if (Array.isArray(value) || typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function renderImportRecordComparison(record, heading, message = '', changedFields = new Set()) {
+  const fields = [
+    ['Full name', 'fullName'],
+    ['NIN', 'nin'],
+    ['Mobile', 'mobile'],
+    ['Date of birth (AD)', 'dobAd'],
+    ['Date of birth (BS)', 'dobBs'],
+    ['Status', 'status'],
+    ['Voter-list number', 'voterListNumber'],
+    ['Abedan number', 'abedanNumber'],
+    ['Notes', 'notes'],
+    ['QR token', 'qrToken'],
+    ['Created', 'createdAt'],
+  ];
+  const content = record
+    ? `<dl class="import-record-fields">${fields.map(([label, key]) => `
+        <div class="${changedFields.has(key) ? 'is-changed' : ''}"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(formatImportValue(record[key]))}</dd></div>
+      `).join('')}</dl>`
+    : `<p class="muted small-text">${escapeHtml(message || 'No matching database record.')}</p>`;
+  return `<section class="import-record-column"><h3>${escapeHtml(heading)}</h3>${content}</section>`;
+}
+
+function showVoterlistImportDetails(category) {
+  const preview = state.voterlistImportPreview;
+  const backup = state.pendingVoterlistImport;
+  if (!preview || !backup) return;
+  const categoryLabels = {
+    total: 'All records',
+    new: 'New unique NINs',
+    changed: 'Changed matching records',
+    unchanged: 'Unchanged matching records',
+    'duplicate-file': 'Duplicate entries in the JSON file',
+    invalid: 'Invalid records or conflicts',
+  };
+  const items = category === 'total'
+    ? preview.items
+    : preview.items.filter((item) => item.category === category);
+  $('importRecordsDetailsTitle').textContent = `${categoryLabels[category]} (${items.length})`;
+  $('importRecordsDetailsContent').innerHTML = items.map((item) => {
+    const imported = backup.records[item.index];
+    let leftRecord = item.existingRecord;
+    let leftHeading = 'Current database record';
+    let leftMessage = '';
+    if (item.category === 'duplicate-file') {
+      leftRecord = item.comparisonRecord;
+      leftHeading = `First copy · JSON record ${(item.duplicateOfIndex ?? 0) + 1}`;
+    } else if (item.category === 'new') {
+      leftHeading = 'Database';
+      leftMessage = 'No existing NIN. This record will be added.';
+    } else if (item.category === 'changed') {
+      leftHeading = 'Current database record';
+    } else if (!leftRecord) {
+      leftHeading = 'Validation';
+      leftMessage = item.reason;
+    }
+    const changedFields = new Set((item.changes || []).map((change) => change.field));
+    const changedFieldLabels = {
+      fullName: 'Full name',
+      dobAd: 'Date of birth (AD)',
+      dobBs: 'Date of birth (BS)',
+      mobile: 'Mobile',
+      status: 'Status',
+      notes: 'Notes',
+      abedanNumber: 'Abedan number',
+      voterListNumber: 'Voter-list number',
+    };
+    const changedFieldNames = [...changedFields]
+      .map((field) => changedFieldLabels[field] || field)
+      .join(', ');
+    return `
+      <article class="import-record-comparison">
+        <p class="import-record-reason">JSON record ${item.index + 1}: ${escapeHtml(item.reason)}</p>
+        ${changedFields.size ? `<p class="import-changed-fields">Changed fields: ${escapeHtml(changedFieldNames)}</p>` : ''}
+        <div class="import-record-columns">
+          ${renderImportRecordComparison(leftRecord, leftHeading, leftMessage, changedFields)}
+          ${renderImportRecordComparison(imported, 'Record from JSON file', '', changedFields)}
+        </div>
+      </article>
+    `;
+  }).join('') || '<p class="muted">No records in this category.</p>';
+  $('importRecordsDetailsDialog').showModal();
+}
+
+function confirmVoterlistImport() {
+  const counts = state.voterlistImportPreview?.counts;
+  if (!counts) return Promise.resolve(false);
+  $('importRecordsConfirmSummary').textContent = `${counts.new} new records will be added, ${counts.changed} matching records will be updated, and ${counts.unchanged} matching records will stay unchanged. ${counts.duplicateFile} duplicate file entries will be skipped.`;
+  return new Promise((resolve) => {
+    state.importConfirmationResolve = resolve;
+    $('importRecordsConfirmDialog').showModal();
+  });
+}
+
+function resolveVoterlistImportConfirmation(confirmed) {
+  const resolve = state.importConfirmationResolve;
+  state.importConfirmationResolve = null;
+  if (resolve) resolve(confirmed);
+  if ($('importRecordsConfirmDialog').open) $('importRecordsConfirmDialog').close();
+}
+
+async function importVoterlistData(event) {
+  event.preventDefault();
+  if (!state.pendingVoterlistImport) return;
+  const button = $('importRecordsButton');
+  button.disabled = true;
+  const confirmed = await confirmVoterlistImport();
+  if (!confirmed) {
+    button.disabled = false;
+    return;
+  }
+  const cancelButton = $('cancelImportRecordsButton');
+  const fileInput = $('importRecordsFile');
+  const message = $('importRecordsMessage');
+  state.voterlistImportInProgress = true;
+  button.disabled = true;
+  cancelButton.disabled = true;
+  fileInput.disabled = true;
+  message.textContent = '';
+  try {
+    const result = await apiRequest('/api/import-records', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'import', mode: 'add-and-update', backup: state.pendingVoterlistImport }),
+    });
+    state.voterlistImportCompleted = true;
+    const summary = `Import complete: ${result.added} added, ${result.updated} updated, ${result.unchanged} unchanged; ${result.duplicateFile} duplicate entries skipped.`;
+    $('recordsSearch').value = '';
+    $('datePeriodFilter').value = 'ALL';
+    $('updatedDatePeriod').value = 'ALL';
+    $('registrationDateFilter').value = '';
+    $('updatedDateFilter').value = '';
+    $('registrationSort').value = 'NEWEST';
+    state.selectedStatusFilter = 'ALL';
+    $('importRecordsDialog').close();
+    setTab('records');
+    const refreshed = await loadRecords({ force: true });
+    if (refreshed) {
+      showToast(summary);
+    } else {
+      showToast(`${summary} The database was updated, but the records list could not be refreshed.`, true);
+    }
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    state.voterlistImportInProgress = false;
+    cancelButton.disabled = false;
+    fileInput.disabled = false;
+    button.disabled = !state.pendingVoterlistImport || state.voterlistImportCompleted;
+  }
+}
+
+function resetVoterlistImport() {
+  if (state.importConfirmationResolve) resolveVoterlistImportConfirmation(false);
+  state.pendingVoterlistImport = null;
+  state.voterlistImportPreview = null;
+  state.voterlistImportCompleted = false;
+  state.voterlistImportInProgress = false;
+  $('importRecordsForm').reset();
+  $('importRecordsPreview').classList.add('hidden');
+  $('importRecordsPreviewMessage').textContent = '';
+  $('importRecordsCounts').replaceChildren();
+  $('importRecordsMessage').textContent = '';
+  $('importRecordsButton').disabled = true;
+}
+
 function renderPublicRecord(record) {
   const status = recordStatus(record);
   const number = recordNumber(record);
@@ -2766,6 +3014,33 @@ async function initializeApp() {
   $('settingsButton').addEventListener('click', () => {
     renderSettingsAccess();
     $('settingsDialog').showModal();
+  });
+  $('openImportRecordsButton').addEventListener('click', () => {
+    resetVoterlistImport();
+    $('importRecordsDialog').showModal();
+  });
+  $('cancelImportRecordsButton').addEventListener('click', () => $('importRecordsDialog').close());
+  $('importRecordsDialog').querySelector('.dialog-close-form').addEventListener('submit', (event) => {
+    if (state.voterlistImportInProgress) event.preventDefault();
+  });
+  $('importRecordsDialog').addEventListener('cancel', (event) => {
+    if (state.voterlistImportInProgress) event.preventDefault();
+  });
+  $('importRecordsDialog').addEventListener('close', resetVoterlistImport);
+  $('importRecordsFile').addEventListener('change', () => void previewVoterlistImport());
+  $('importRecordsCounts').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-import-category]');
+    if (button) showVoterlistImportDetails(button.dataset.importCategory);
+  });
+  $('closeImportRecordsDetailsButton').addEventListener('click', () => $('importRecordsDetailsDialog').close());
+  $('confirmImportRecordsButton').addEventListener('click', () => resolveVoterlistImportConfirmation(true));
+  $('cancelImportConfirmButton').addEventListener('click', () => resolveVoterlistImportConfirmation(false));
+  $('importRecordsConfirmDialog').addEventListener('cancel', (event) => {
+    event.preventDefault();
+    resolveVoterlistImportConfirmation(false);
+  });
+  $('importRecordsConfirmDialog').addEventListener('close', () => {
+    if (state.importConfirmationResolve) resolveVoterlistImportConfirmation(false);
   });
   $('openPasswordDialogButton').addEventListener('click', () => {
     $('passwordMessage').textContent = '';
@@ -2932,6 +3207,7 @@ async function initializeApp() {
     if (event.target === $('deleteRecordDialog')) $('deleteRecordDialog').close();
   });
   $('backupRecordsButton').addEventListener('click', () => void backupRecords());
+  $('importRecordsForm').addEventListener('submit', (event) => void importVoterlistData(event));
   $('printMultipleButton').addEventListener('click', () => {
     animateToolbarAction($('printMultipleButton'));
     openMultiplePrintDialog();

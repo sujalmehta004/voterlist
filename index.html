@@ -524,6 +524,11 @@
     </section>
     <div id="adminSettingsSections" class="hidden">
       <section class="settings-section">
+        <h3>Import voter records</h3>
+        <p class="muted small-text">Review a JSON backup, add records with new NINs, and update changed records with the same NIN. Records not in the file are never removed.</p>
+        <button id="openImportRecordsButton" class="button primary" type="button">Import JSON</button>
+      </section>
+      <section class="settings-section">
         <h3>Admin security</h3>
         <p class="muted small-text">Update the password used to access this workspace.</p>
         <button id="openPasswordDialogButton" class="button subtle" type="button">Change password</button>
@@ -551,6 +556,56 @@
     </section>
     <div class="dialog-actions">
       <button id="cancelSettingsButton" class="button subtle" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="importRecordsDialog" class="check-dialog import-records-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">DATABASE IMPORT</p>
+    <h2>Import voter records</h2>
+    <p class="muted small-text">New NINs will be added. Changed records with a matching NIN will be updated and recorded in update history. Unchanged records and records not in this file will be left untouched.</p>
+    <form id="importRecordsForm" class="settings-form">
+      <div class="field">
+        <label for="importRecordsFile">Voterlist System JSON backup</label>
+        <input id="importRecordsFile" type="file" accept=".json,application/json" required />
+      </div>
+      <div id="importRecordsPreview" class="import-preview hidden">
+        <p id="importRecordsPreviewMessage" class="message" role="status"></p>
+        <div id="importRecordsCounts" class="import-counts" aria-label="Import validation counts"></div>
+      </div>
+      <p id="importRecordsMessage" class="message" role="alert"></p>
+      <div class="dialog-actions">
+        <button id="cancelImportRecordsButton" class="button subtle" type="button">Cancel</button>
+        <button id="importRecordsButton" class="button primary" type="submit" disabled>Import records</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="importRecordsDetailsDialog" class="check-dialog import-record-details-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">IMPORT VALIDATION DETAILS</p>
+    <h2 id="importRecordsDetailsTitle">Records</h2>
+    <div id="importRecordsDetailsContent" class="import-record-details-content"></div>
+    <div class="dialog-actions">
+      <button id="closeImportRecordsDetailsButton" class="button subtle" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="importRecordsConfirmDialog" class="check-dialog import-confirm-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">CONFIRM DATABASE IMPORT</p>
+    <h2>Apply these JSON changes?</h2>
+    <p id="importRecordsConfirmSummary" class="muted small-text"></p>
+    <p class="import-confirm-notice">New records will be added. Changed records will be updated with an entry in their update history. Unchanged records and all records not in this file will be left untouched.</p>
+    <div class="dialog-actions">
+      <button id="cancelImportConfirmButton" class="button subtle" type="button">Go back</button>
+      <button id="confirmImportRecordsButton" class="button primary" type="button">Confirm import</button>
     </div>
   </dialog>
 

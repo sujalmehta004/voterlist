@@ -16,6 +16,7 @@ const recordsApi = require('../api/records');
 const checkStatusApi = require('../api/check-status');
 const publicRecordApi = require('../api/public-record');
 const verificationManifestApi = require('../api/verification-manifest');
+const importRecordsApi = require('../api/import-records');
 const voterSearchApi = require('../api/voter-search');
 
 function mockResponse() {
@@ -106,6 +107,7 @@ test('active sessions renew and password version changes revoke existing tokens'
 test('management APIs reject requests without an admin session', async () => {
   const request = { method: 'POST', url: '/api/check-status', headers: {}, body: {} };
   assert.equal((await invoke(recordsApi, { ...request, method: 'GET', url: '/api/records' })).statusCode, 401);
+  assert.equal((await invoke(importRecordsApi, { ...request, method: 'POST', url: '/api/import-records' })).statusCode, 401);
   assert.equal((await invoke(checkStatusApi, request)).statusCode, 401);
   assert.equal((await invoke(voterSearchApi, request)).statusCode, 401);
   assert.equal((await invoke(authApi, { ...request, method: 'PUT', url: '/api/auth' })).statusCode, 401);
@@ -207,6 +209,269 @@ test('record deletion removes selected records and their history after password 
     VoterlistData.deleteMany = originalDeleteRecords;
     VoterlistHistory.deleteMany = originalDeleteHistory;
   }
+});
+
+test('record import adds new NINs, updates changed records with history, and skips file duplicates', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const cookieResponse = mockResponse();
+  setSessionCookie(cookieResponse, createSession());
+  const originalStartSession = mongoose.startSession;
+  const originalFind = VoterlistData.find;
+  const originalFindOne = VoterlistData.findOne;
+  const originalCreate = VoterlistData.create;
+  const originalSaveRecordUpdate = require('../lib/voterlist-history').saveRecordUpdate;
+  const existingNin = '123-456-789-0';
+  const currentRecord = {
+    _id: 'existing-record-id',
+    nin: existingNin,
+    dobAd: '1990-01-02',
+    dobBs: '1946-09-18',
+    fullName: 'OLD NAME',
+    mobile: '9800000000',
+    status: 'DONE',
+    notes: '',
+    abedanNumber: '',
+    voterListNumber: '',
+    qrToken: '9'.repeat(32),
+    async save() {},
+  };
+  const unchangedRecord = {
+    _id: 'unchanged-record-id',
+    nin: '345-678-901-2',
+    dobAd: '1990-01-02',
+    dobBs: '1946-09-18',
+    fullName: 'SAME NAME',
+    mobile: '9830000000',
+    status: 'DONE',
+    notes: '',
+    abedanNumber: '',
+    voterListNumber: '',
+    qrToken: '5'.repeat(32),
+    async save() { throw new Error('Unchanged records must not be saved.'); },
+  };
+  const backup = {
+    application: 'Voterlist System',
+    formatVersion: 1,
+    recordCount: 4,
+    records: [
+      {
+        nin: existingNin,
+        dobAd: '1990-01-02',
+        dobBs: '1946-09-18',
+        fullName: 'EXISTING NAME',
+        mobile: '9800000000',
+        status: 'DONE',
+        notes: '',
+        qrToken: '1'.repeat(32),
+        createdAt: '2020-01-01T00:00:00.000Z',
+        updatedAt: '2020-01-02T00:00:00.000Z',
+      },
+      {
+        nin: '234-567-890-1',
+        dobAd: '1990-01-02',
+        dobBs: '1946-09-18',
+        fullName: 'NEW NAME',
+        mobile: '9810000000',
+        status: 'NOT ONLINE',
+        notes: '',
+        qrToken: '2'.repeat(32),
+        createdAt: '2021-01-01T00:00:00.000Z',
+        updatedAt: '2021-01-02T00:00:00.000Z',
+      },
+      {
+        nin: '234-567-890-1',
+        dobAd: '1990-01-02',
+        dobBs: '1946-09-18',
+        fullName: 'DUPLICATE NAME',
+        mobile: '9820000000',
+        status: 'PENDING',
+        notes: '',
+        qrToken: '3'.repeat(32),
+        createdAt: '2021-01-01T00:00:00.000Z',
+        updatedAt: '2021-01-02T00:00:00.000Z',
+      },
+      {
+        nin: unchangedRecord.nin,
+        dobAd: unchangedRecord.dobAd,
+        dobBs: unchangedRecord.dobBs,
+        fullName: unchangedRecord.fullName,
+        mobile: unchangedRecord.mobile,
+        status: unchangedRecord.status,
+        notes: unchangedRecord.notes,
+        abedanNumber: unchangedRecord.abedanNumber,
+        voterListNumber: unchangedRecord.voterListNumber,
+        qrToken: '6'.repeat(32),
+        createdAt: '2021-01-01T00:00:00.000Z',
+        updatedAt: '2021-01-02T00:00:00.000Z',
+      },
+    ],
+  };
+  let insertedRecords = [];
+  let savedUpdate = null;
+  mongoose.startSession = async () => ({
+    async withTransaction(callback) { return callback(); },
+    async endSession() {},
+  });
+  VoterlistData.find = (filter) => ({
+    select() { return this; },
+    session() { return this; },
+    async lean() {
+      if (filter.nin) return [currentRecord, unchangedRecord];
+      return [];
+    },
+  });
+  VoterlistData.findOne = () => ({ session: async () => currentRecord });
+  VoterlistData.create = async (records) => {
+    insertedRecords = records;
+    return records;
+  };
+  require('../lib/voterlist-history').saveRecordUpdate = async (recordId, changes, options) => {
+    savedUpdate = { recordId, changes, options };
+  };
+
+  try {
+    const response = await withSessionDatabase(() => invoke(importRecordsApi, {
+      method: 'POST',
+      url: '/api/import-records',
+      headers: { cookie: cookieResponse.headers['Set-Cookie'].split(';')[0] },
+      body: {
+        action: 'import',
+        mode: 'add-and-update',
+        backup,
+      },
+    }));
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body, { imported: true, added: 1, updated: 1, unchanged: 1, duplicateFile: 1, invalid: 0 });
+    assert.equal(insertedRecords.length, 1);
+    assert.equal(insertedRecords[0].nin, '234-567-890-1');
+    assert.equal(insertedRecords[0].fullName, 'NEW NAME');
+    assert.equal(currentRecord.fullName, 'EXISTING NAME');
+    assert.equal(unchangedRecord.fullName, 'SAME NAME');
+    assert.equal(savedUpdate.recordId, 'existing-record-id');
+    assert.deepEqual(savedUpdate.changes, [
+      { field: 'fullName', before: 'OLD NAME', after: 'EXISTING NAME' },
+    ]);
+    assert.ok(savedUpdate.options.session);
+  } finally {
+    mongoose.startSession = originalStartSession;
+    VoterlistData.find = originalFind;
+    VoterlistData.findOne = originalFindOne;
+    VoterlistData.create = originalCreate;
+    require('../lib/voterlist-history').saveRecordUpdate = originalSaveRecordUpdate;
+  }
+});
+
+test('record import preview reports changed, unchanged, duplicate, and invalid records', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const cookieResponse = mockResponse();
+  setSessionCookie(cookieResponse, createSession());
+  const originalFind = VoterlistData.find;
+  VoterlistData.find = (filter) => ({
+    select() { return this; },
+    async lean() {
+      if (filter.nin) return [
+        { nin: '123-456-789-0', fullName: 'TEST VOTER', mobile: '9800000000', dobAd: '1989-01-02', dobBs: '1946-09-18', status: 'DONE' },
+        {
+          nin: '345-678-901-2',
+          dobAd: '1990-01-02',
+          dobBs: '1946-09-18',
+          fullName: 'UNCHANGED VOTER',
+          mobile: '9820000000',
+          status: 'DONE',
+          notes: 'same',
+          abedanNumber: 'A-1',
+          voterListNumber: 'V-1',
+          qrToken: '4'.repeat(32),
+        },
+      ];
+      return [];
+    },
+  });
+
+  try {
+    const response = await withSessionDatabase(() => invoke(importRecordsApi, {
+      method: 'POST',
+      url: '/api/import-records',
+      headers: { cookie: cookieResponse.headers['Set-Cookie'].split(';')[0] },
+      body: {
+        action: 'preview',
+        backup: {
+          application: 'Voterlist System',
+          formatVersion: 1,
+          recordCount: 4,
+          records: [{
+            nin: '123-456-789-0',
+            dobAd: '1990-01-02',
+            dobBs: '1946-09-18',
+            fullName: 'TEST VOTER',
+            mobile: '9800000000',
+            status: 'NOT ONLINE',
+            notes: '',
+            qrToken: '1'.repeat(32),
+            createdAt: '2020-01-01T00:00:00.000Z',
+            updatedAt: '2020-01-02T00:00:00.000Z',
+          }, {
+            nin: '123-456-789-0',
+            dobAd: '1990-01-02',
+            dobBs: '1946-09-18',
+            fullName: 'DUPLICATE',
+            mobile: '9800000000',
+            status: 'NOT ONLINE',
+            qrToken: '2'.repeat(32),
+            createdAt: '2020-01-01T00:00:00.000Z',
+            updatedAt: '2020-01-02T00:00:00.000Z',
+          }, {
+            nin: '234-567-890-1',
+            dobAd: '1990-01-02',
+            dobBs: '1946-09-18',
+            fullName: 'NEW RECORD',
+            mobile: '9810000000',
+            status: 'UNKNOWN',
+            qrToken: '3'.repeat(32),
+            createdAt: '2020-01-01T00:00:00.000Z',
+            updatedAt: '2020-01-02T00:00:00.000Z',
+          }, {
+            nin: '345-678-901-2',
+            dobAd: '1990-01-02',
+            dobBs: '1946-09-18',
+            fullName: 'UNCHANGED VOTER',
+            mobile: '9820000000',
+            status: 'DONE',
+            notes: 'same',
+            abedanNumber: 'A-1',
+            voterListNumber: 'V-1',
+            qrToken: '4'.repeat(32),
+            createdAt: '2020-01-01T00:00:00.000Z',
+            updatedAt: '2020-01-02T00:00:00.000Z',
+          }],
+        },
+      },
+    }));
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body.counts, { total: 4, new: 0, changed: 1, unchanged: 1, duplicateFile: 1, invalid: 1 });
+    assert.deepEqual(response.body.items.map((item) => item.category), ['changed', 'duplicate-file', 'invalid', 'unchanged']);
+    assert.match(response.body.items[0].reason, /first name or date of birth differs/i);
+    assert.ok(response.body.items[0].changes.some((change) => change.field === 'dobAd'));
+  } finally {
+    VoterlistData.find = originalFind;
+  }
+});
+
+test('record import rejects any mode that could overwrite or remove existing records', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const cookieResponse = mockResponse();
+  setSessionCookie(cookieResponse, createSession());
+  const response = await withSessionDatabase(() => invoke(importRecordsApi, {
+    method: 'POST',
+    url: '/api/import-records',
+    headers: { cookie: cookieResponse.headers['Set-Cookie'].split(';')[0] },
+    body: { action: 'import', mode: 'replace', backup: {} },
+  }));
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body.error, /cannot be removed/i);
 });
 
 test('workspace settings require valid visibility values and keep one tab visible', async () => {
