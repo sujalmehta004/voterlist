@@ -195,9 +195,12 @@
                 <label for="recordsSearch">Search records</label>
                 <input id="recordsSearch" type="search" placeholder="Name, NIN, mobile, or number" />
               </div>
-              <div class="field">
-                <label for="datePeriodFilter">Registration date</label>
-                <select id="datePeriodFilter">
+              <div class="field date-filter-field">
+                <label for="openRegistrationDateFilter">Registration date</label>
+                <button id="openRegistrationDateFilter" class="date-filter-trigger" type="button" data-date-filter="registration">
+                  <span id="registrationDateFilterLabel">Any date</span><span class="date-filter-trigger-icon" aria-hidden="true">▦</span><span id="registrationDateFilterCount" class="filter-count" aria-live="polite">0</span>
+                </button>
+                <select id="datePeriodFilter" class="hidden" aria-hidden="true" tabindex="-1">
                   <option value="ALL">Any date</option>
                   <option value="TODAY">Today</option>
                   <option value="YESTERDAY">Yesterday</option>
@@ -205,10 +208,29 @@
                   <option value="THIS_MONTH">This month</option>
                   <option value="THIS_YEAR">This year</option>
                 </select>
+                <input id="registrationDateFilter" class="hidden" type="date" tabindex="-1" aria-hidden="true" />
               </div>
-              <div class="field">
-                <label for="registrationSort">Sort by registered date</label>
-                <select id="registrationSort">
+              <div class="field date-filter-field">
+                <label for="openUpdatedDateFilter">Update date</label>
+                <button id="openUpdatedDateFilter" class="date-filter-trigger" type="button" data-date-filter="updated">
+                  <span id="updatedDateFilterLabel">Any date</span><span class="date-filter-trigger-icon" aria-hidden="true">▦</span><span id="updatedDateFilterCount" class="filter-count" aria-live="polite">0</span>
+                </button>
+                <select id="updatedDatePeriod" class="hidden" aria-hidden="true" tabindex="-1">
+                  <option value="ALL">Any date</option>
+                  <option value="TODAY">Today</option>
+                  <option value="YESTERDAY">Yesterday</option>
+                  <option value="THIS_WEEK">This week</option>
+                  <option value="THIS_MONTH">This month</option>
+                  <option value="THIS_YEAR">This year</option>
+                </select>
+                <input id="updatedDateFilter" class="hidden" type="date" tabindex="-1" aria-hidden="true" />
+              </div>
+              <div class="field date-filter-field">
+                <label for="openRegistrationSort">Sort by registered date</label>
+                <button id="openRegistrationSort" class="date-filter-trigger" type="button" data-sort-filter>
+                  <span id="registrationSortLabel">Newest first</span><span aria-hidden="true">↕</span>
+                </button>
+                <select id="registrationSort" class="hidden" aria-hidden="true" tabindex="-1">
                   <option value="NEWEST">Newest first</option>
                   <option value="OLDEST">Oldest first</option>
                 </select>
@@ -252,6 +274,39 @@
       </section>
     </div>
   </main>
+
+  <dialog id="dateFilterDialog" class="check-dialog date-filter-dialog">
+    <form method="dialog" class="dialog-close-form">
+      <button class="dialog-close" type="submit" aria-label="Close">×</button>
+    </form>
+    <p class="eyebrow">RECORD DATE FILTER</p>
+    <h2 id="dateFilterDialogTitle">Choose a date</h2>
+    <div id="dateFilterDateInputs" class="date-filter-date-inputs">
+      <label id="dateFilterBsLabel" for="dateFilterBsInput">Choose or enter a Nepali date (BS)</label>
+      <div class="nepali-date-picker">
+        <div class="nepali-date-input-row">
+          <input id="dateFilterBsInput" type="text" inputmode="numeric" autocomplete="off" placeholder="YYYY-MM-DD" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" />
+          <button id="toggleNepaliCalendar" class="nepali-calendar-toggle" type="button" aria-label="Open Nepali calendar" aria-expanded="false">▦</button>
+        </div>
+        <div id="nepaliCalendar" class="nepali-calendar hidden">
+          <div class="nepali-calendar-header">
+            <button id="previousNepaliMonth" type="button" aria-label="Previous month">‹</button>
+            <strong id="nepaliCalendarMonth"></strong>
+            <button id="nextNepaliMonth" type="button" aria-label="Next month">›</button>
+          </div>
+          <div class="nepali-calendar-weekdays" aria-hidden="true">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+          </div>
+          <div id="nepaliCalendarDays" class="nepali-calendar-days"></div>
+        </div>
+      </div>
+    </div>
+    <p id="dateFilterOptionHeading" class="date-filter-option-heading">Or choose a date range</p>
+    <div id="dateFilterPeriodOptions" class="date-filter-period-options"></div>
+    <div class="dialog-actions">
+      <button id="closeDateFilterDialog" class="button subtle" type="button">Cancel</button>
+    </div>
+  </dialog>
 
   <dialog id="registrationAnalyticsDialog" class="check-dialog registration-analytics-dialog">
     <form method="dialog" class="dialog-close-form">
@@ -472,6 +527,11 @@
         <h3>Check All request limit</h3>
         <p class="muted small-text">Choose how many record checks Check All runs at the same time.</p>
         <button id="openCheckAllConcurrencyButton" class="button subtle" type="button">Request limit</button>
+      </section>
+      <section class="settings-section">
+        <h3>Sign out</h3>
+        <p class="muted small-text">End this admin session on this device.</p>
+        <button id="settingsSignOutButton" class="button subtle" type="button">Sign out</button>
       </section>
     </section>
     <div class="dialog-actions">

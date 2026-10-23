@@ -263,6 +263,23 @@ async function verifyWorkspaceAdminPassword(event) {
   }
 }
 
+async function signOutFromSettings() {
+  const button = $('settingsSignOutButton');
+  button.disabled = true;
+  try {
+    await apiRequest('/api/auth', { method: 'DELETE' });
+    $('settingsDialog').close();
+    state.settingsUnlocked = false;
+    $('loginPassword').value = '';
+    $('loginMessage').textContent = 'You have been signed out.';
+    setScreen('loginScreen');
+  } catch (error) {
+    showToast(`Could not sign out: ${error.message}`, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function saveRetrySettings(event) {
   event.preventDefault();
   const retries = Number($('automaticStatusRetries').value);
@@ -353,6 +370,9 @@ async function softRefresh() {
     resetRecordForm();
     $('recordsSearch').value = '';
     $('datePeriodFilter').value = 'ALL';
+    $('updatedDatePeriod').value = 'ALL';
+    $('registrationDateFilter').value = '';
+    $('updatedDateFilter').value = '';
     $('registrationSort').value = 'NEWEST';
     state.selectedStatusFilter = 'NOT DONE';
     const loaded = await loadRecords({ force: true });
@@ -769,11 +789,11 @@ function periodStartDate(period) {
   return null;
 }
 
-function matchesDatePeriod(record, period) {
+function matchesDatePeriod(record, period, field = 'createdAt') {
   if (period === 'ALL') return true;
-  if (!record.createdAt) return false;
-  const createdAt = new Date(record.createdAt);
-  if (Number.isNaN(createdAt.getTime())) return false;
+  if (!record[field]) return false;
+  const recordDate = new Date(record[field]);
+  if (Number.isNaN(recordDate.getTime())) return false;
   const start = periodStartDate(period);
   if (!start) return true;
   const end = new Date(start);
@@ -781,7 +801,15 @@ function matchesDatePeriod(record, period) {
   else if (period === 'THIS_MONTH') end.setMonth(end.getMonth() + 1);
   else if (period === 'THIS_YEAR') end.setFullYear(end.getFullYear() + 1);
   else end.setDate(end.getDate() + 1);
-  return createdAt >= start && createdAt < end;
+  return recordDate >= start && recordDate < end;
+}
+
+function matchesExactDate(record, field, dateValue) {
+  if (!dateValue) return true;
+  const parts = registrationDateParts(record[field]);
+  if (!parts) return false;
+  const [year, month, day] = dateValue.split('-').map(Number);
+  return parts.year === year && parts.month === month - 1 && parts.day === day;
 }
 
 function registrationDateParts(value) {
@@ -860,6 +888,8 @@ function renderRegistrationAnalytics() {
     state.registrationAnalyticsPeriod = `day:${localDateKey(now)}`;
   }
   const selectedPeriod = allPeriods.find((period) => period.key === state.registrationAnalyticsPeriod);
+  const selectedRecords = getRegistrationAnalyticsRecords(selectedPeriod);
+  const selectedUndoneRecords = selectedRecords.filter((record) => recordStatus(record) !== 'DONE');
   $('registrationAnalyticsContent').innerHTML = `
     <div class="registration-analytics-periods">
       ${periodGroups.map((group) => `
@@ -880,6 +910,39 @@ function renderRegistrationAnalytics() {
         </section>
       `).join('')}
     </div>
+    <section class="registration-analytics-records">
+      <div class="registration-analytics-records-heading">
+        <h3>${escapeHtml(selectedPeriod.label)} registrations <span>${selectedRecords.length}</span></h3>
+        <div class="registration-analytics-check-actions">
+          <button class="button primary" id="checkRegistrationPeriodButton" type="button" ${!selectedRecords.length || state.checkingAll ? 'disabled' : ''}>
+            ${state.checkingAll ? 'Check All is running…' : `Check all (${selectedRecords.length})`}
+          </button>
+          <button class="button subtle" id="checkUndoneRegistrationPeriodButton" type="button" ${!selectedUndoneRecords.length || state.checkingAll ? 'disabled' : ''}>
+            ${state.checkingAll ? 'Check All is running…' : `Check all undone (${selectedUndoneRecords.length})`}
+          </button>
+        </div>
+      </div>
+      <div class="registration-analytics-table-scroll">
+        <table class="registration-analytics-table">
+          <thead><tr><th>Name</th><th>NIN</th><th>Mobile</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${selectedRecords.length ? selectedRecords.map((record) => `
+              <tr>
+                <td><strong>${escapeHtml(record.fullName)}</strong></td>
+                <td>${escapeHtml(record.nin)}</td>
+                <td>${escapeHtml(record.mobile)}</td>
+                <td>${statusPill(recordStatus(record))}</td>
+                <td class="row-actions">
+                  <button class="button primary tiny" type="button" data-analytics-check="${escapeHtml(record._id)}" ${state.checkingAll || state.activeStatusChecks.has(record._id) ? 'disabled' : ''}>Check</button>
+                  <button class="button subtle tiny" type="button" data-analytics-print="${escapeHtml(record._id)}">Print</button>
+                  ${state.workspaceSettings.hideRecordDeleteButton ? '' : `<button class="button tiny" type="button" data-analytics-delete="${escapeHtml(record._id)}">Delete</button>`}
+                </td>
+              </tr>
+            `).join('') : '<tr><td class="empty-row" colspan="5">No records registered in this period.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </section>
   `;
   $('registrationAnalyticsContent').querySelectorAll('[data-registration-period]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -887,11 +950,72 @@ function renderRegistrationAnalytics() {
       renderRegistrationAnalytics();
     });
   });
+  $('checkRegistrationPeriodButton').addEventListener('click', () => {
+    startRegistrationPeriodChecks(selectedRecords, selectedPeriod);
+  });
+  $('checkUndoneRegistrationPeriodButton').addEventListener('click', () => {
+    startRegistrationPeriodChecks(selectedUndoneRecords, selectedPeriod, 'undone');
+  });
+  $('registrationAnalyticsContent').querySelectorAll('[data-analytics-check]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const record = state.records.find((item) => item._id === button.dataset.analyticsCheck);
+      if (record) {
+        void checkRecordStatus(record, null).finally(() => {
+          if ($('registrationAnalyticsDialog').open) renderRegistrationAnalytics();
+        });
+      }
+    });
+  });
+  $('registrationAnalyticsContent').querySelectorAll('[data-analytics-print]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const record = state.records.find((item) => item._id === button.dataset.analyticsPrint);
+      if (record) printRecord(record);
+    });
+  });
+  $('registrationAnalyticsContent').querySelectorAll('[data-analytics-delete]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const record = state.records.find((item) => item._id === button.dataset.analyticsDelete);
+      if (record) openRecordDeleteDialog(record);
+    });
+  });
+}
+
+function startRegistrationPeriodChecks(records, period, recordScope = 'all') {
+  if (state.checkingAll) {
+    showToast('Wait for the current Check All run to finish.', true);
+    return;
+  }
+  if (!records.length) return;
+  const scopeLabel = recordScope === 'undone' ? 'unfinished registrations' : 'registrations';
+  updateCheckAllDialog(records, `Check ${scopeLabel} for ${period.label}`);
+  $('checkAllDialog').showModal();
+  const batchPromise = runBatchChecks(records);
+  state.batchRunPromise = batchPromise;
+  void batchPromise.finally(() => {
+    if (state.batchRunPromise === batchPromise) state.batchRunPromise = null;
+    if ($('registrationAnalyticsDialog').open) renderRegistrationAnalytics();
+  });
+}
+
+function getRegistrationAnalyticsRecords(period) {
+  if (!period) return [];
+  return state.records.filter((record) => {
+    const date = registrationDateParts(record.createdAt);
+    if (!date) return false;
+    if (period.type === 'day') {
+      return date.year === period.year && date.month === period.month && date.day === period.day;
+    }
+    if (period.type === 'month') return date.year === period.year && date.month === period.month;
+    return date.year === period.year;
+  });
 }
 
 function visibleRecords() {
   const search = $('recordsSearch').value;
   const datePeriod = $('datePeriodFilter').value;
+  const updatedDatePeriod = $('updatedDatePeriod').value;
+  const registrationDate = $('registrationDateFilter').value;
+  const updatedDate = $('updatedDateFilter').value;
   const records = state.records.filter((record) => {
     const status = recordStatus(record);
     const matchesStatus = Boolean(search.trim())
@@ -900,7 +1024,10 @@ function visibleRecords() {
       || status === state.selectedStatusFilter;
     return matchesStatus
       && matchesRecordSearch(record, search)
-      && matchesDatePeriod(record, datePeriod);
+      && matchesDatePeriod(record, datePeriod)
+      && matchesDatePeriod(record, updatedDatePeriod, 'updatedAt')
+      && matchesExactDate(record, 'createdAt', registrationDate)
+      && matchesExactDate(record, 'updatedAt', updatedDate);
   });
   const direction = $('registrationSort')?.value === 'OLDEST' ? 1 : -1;
   return records.sort((left, right) => {
@@ -911,6 +1038,220 @@ function visibleRecords() {
     if (!leftValid || !rightValid) return Number(rightValid) - Number(leftValid);
     return (leftDate - rightDate) * direction;
   });
+}
+
+function updateDateFilterCounts() {
+  const search = $('recordsSearch').value;
+  const datePeriod = $('datePeriodFilter').value;
+  const updatedDatePeriod = $('updatedDatePeriod').value;
+  const registrationDate = $('registrationDateFilter').value;
+  const updatedDate = $('updatedDateFilter').value;
+  const baseRecords = state.records.filter((record) => {
+    const status = recordStatus(record);
+    const matchesStatus = Boolean(search.trim())
+      || state.selectedStatusFilter === 'ALL'
+      || (state.selectedStatusFilter === 'NOT DONE' && status !== 'DONE')
+      || status === state.selectedStatusFilter;
+    return matchesStatus && matchesRecordSearch(record, search);
+  });
+  const registrationCount = baseRecords.filter((record) => (
+    matchesDatePeriod(record, datePeriod)
+    && matchesExactDate(record, 'createdAt', registrationDate)
+  )).length;
+  const updatedCount = baseRecords.filter((record) => (
+    matchesDatePeriod(record, datePeriod)
+    && matchesDatePeriod(record, updatedDatePeriod, 'updatedAt')
+    && matchesExactDate(record, 'createdAt', registrationDate)
+    && matchesExactDate(record, 'updatedAt', updatedDate)
+  )).length;
+  $('registrationDateFilterCount').textContent = String(registrationCount);
+  $('updatedDateFilterCount').textContent = String(updatedCount);
+  $('registrationDateFilterLabel').textContent = dateFilterLabel(datePeriod, registrationDate);
+  $('updatedDateFilterLabel').textContent = dateFilterLabel(updatedDatePeriod, updatedDate);
+  $('registrationSortLabel').textContent = $('registrationSort').value === 'OLDEST' ? 'Oldest first' : 'Newest first';
+  $('openRegistrationDateFilter').classList.toggle('is-filtered', datePeriod !== 'ALL' || Boolean(registrationDate));
+  $('openUpdatedDateFilter').classList.toggle('is-filtered', updatedDatePeriod !== 'ALL' || Boolean(updatedDate));
+  $('openRegistrationSort').classList.toggle('is-filtered', $('registrationSort').value !== 'NEWEST');
+}
+
+function dateFilterLabel(period, exactDate) {
+  if (exactDate) {
+    try {
+      return `${convertDateValue(exactDate, 'ad')} BS`;
+    } catch (error) {
+      console.error('Could not display a selected filter date in Nepali calendar format:', error);
+      return exactDate;
+    }
+  }
+  return ({
+    ALL: 'Any date',
+    TODAY: 'Today',
+    YESTERDAY: 'Yesterday',
+    THIS_WEEK: 'This week',
+    THIS_MONTH: 'This month',
+    THIS_YEAR: 'This year',
+  })[period] || 'Any date';
+}
+
+const nepaliCalendarMonths = [
+  'Baishakh', 'Jestha', 'Ashadh', 'Shrawan', 'Bhadra', 'Ashwin',
+  'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra',
+];
+
+function renderNepaliCalendar() {
+  const calendar = $('nepaliCalendar');
+  const year = Number(calendar.dataset.year);
+  const month = Number(calendar.dataset.month);
+  const selectedDate = $('dateFilterBsInput').value.trim();
+  $('nepaliCalendarMonth').textContent = `${nepaliCalendarMonths[month - 1]} ${year} BS`;
+
+  const monthDates = [];
+  let firstWeekday = 0;
+  for (let day = 1; day <= 32; day += 1) {
+    const nepaliDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    let adDate;
+    try {
+      adDate = convertDateValue(nepaliDate, 'bs');
+    } catch (error) {
+      if (day === 1) throw error;
+      break;
+    }
+    if (!adDate) {
+      if (day === 1) throw new Error('Could not load this Nepali calendar month.');
+      break;
+    }
+    const [adYear, adMonth, adDay] = adDate.split('-').map(Number);
+    if (day === 1) firstWeekday = new Date(adYear, adMonth - 1, adDay).getDay();
+    monthDates.push(nepaliDate);
+  }
+
+  $('nepaliCalendarDays').innerHTML = [
+    ...Array.from({ length: firstWeekday }, () => '<span aria-hidden="true"></span>'),
+    ...monthDates.map((date) => {
+      const day = Number(date.slice(-2));
+      const isSelected = date === selectedDate;
+      return `<button type="button" class="${isSelected ? 'selected' : ''}" data-nepali-date="${date}" aria-pressed="${isSelected}">${day}</button>`;
+    }),
+  ].join('');
+}
+
+function shiftNepaliCalendarMonth(offset) {
+  const calendar = $('nepaliCalendar');
+  let year = Number(calendar.dataset.year);
+  let month = Number(calendar.dataset.month) + offset;
+  if (month < 1) {
+    year -= 1;
+    month = 12;
+  } else if (month > 12) {
+    year += 1;
+    month = 1;
+  }
+  calendar.dataset.year = String(year);
+  calendar.dataset.month = String(month);
+  try {
+    renderNepaliCalendar();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function openDateFilterDialog(filterType) {
+  const isSort = filterType === 'sort';
+  if (isSort) {
+    $('dateFilterDialog').dataset.filterType = filterType;
+    $('dateFilterDialogTitle').textContent = 'Sort by registered date';
+    $('dateFilterDateInputs').classList.add('hidden');
+    $('dateFilterOptionHeading').textContent = 'Choose sorting order';
+    $('dateFilterPeriodOptions').innerHTML = [
+      { value: 'NEWEST', label: 'Newest first' },
+      { value: 'OLDEST', label: 'Oldest first' },
+    ].map((option) => `
+      <button class="date-filter-period-option${$('registrationSort').value === option.value ? ' active' : ''}" type="button" data-date-period="${option.value}" aria-pressed="${$('registrationSort').value === option.value}">
+        ${option.label}
+      </button>
+    `).join('');
+    $('dateFilterDialog').showModal();
+    return;
+  }
+  const isRegistration = filterType === 'registration';
+  const periodSelect = $(isRegistration ? 'datePeriodFilter' : 'updatedDatePeriod');
+  const dateInput = $(isRegistration ? 'registrationDateFilter' : 'updatedDateFilter');
+  const title = isRegistration ? 'Registration date' : 'Update date';
+  $('dateFilterDialog').dataset.filterType = filterType;
+  $('dateFilterDialogTitle').textContent = title;
+  $('dateFilterDateInputs').classList.remove('hidden');
+  $('dateFilterBsLabel').textContent = `Choose or type a ${title.toLocaleLowerCase()} (BS); press Enter to apply`;
+  try {
+    $('dateFilterBsInput').value = dateInput.value ? convertDateValue(dateInput.value, 'ad') : '';
+    if (!$('dateFilterBsInput').value) {
+      const today = new Date();
+      $('dateFilterBsInput').value = convertDateValue(
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+        'ad',
+      );
+    }
+    const [calendarYear, calendarMonth] = $('dateFilterBsInput').value.split('-').map(Number);
+    $('nepaliCalendar').dataset.year = String(calendarYear);
+    $('nepaliCalendar').dataset.month = String(calendarMonth);
+    $('nepaliCalendar').classList.remove('hidden');
+    $('toggleNepaliCalendar').setAttribute('aria-expanded', 'true');
+    renderNepaliCalendar();
+  } catch (error) {
+    $('dateFilterBsInput').value = '';
+    showToast(error.message, true);
+  }
+  $('dateFilterOptionHeading').textContent = 'Or choose a date range';
+  const periods = [
+    { value: 'ALL', label: 'Any date' },
+    { value: 'TODAY', label: 'Today' },
+    { value: 'YESTERDAY', label: 'Yesterday' },
+    { value: 'THIS_WEEK', label: 'This week' },
+    { value: 'THIS_MONTH', label: 'This month' },
+    { value: 'THIS_YEAR', label: 'This year' },
+  ];
+  $('dateFilterPeriodOptions').innerHTML = periods.map((period) => `
+    <button class="date-filter-period-option${periodSelect.value === period.value && !dateInput.value ? ' active' : ''}" type="button" data-date-period="${period.value}" aria-pressed="${periodSelect.value === period.value && !dateInput.value}">
+      ${period.label}
+    </button>
+  `).join('');
+  $('dateFilterDialog').showModal();
+}
+
+function applyDateFilterPeriod(period) {
+  if ($('dateFilterDialog').dataset.filterType === 'sort') {
+    $('registrationSort').value = period;
+    $('dateFilterDialog').close();
+    renderRecords();
+    return;
+  }
+  const isRegistration = $('dateFilterDialog').dataset.filterType === 'registration';
+  const periodSelect = $(isRegistration ? 'datePeriodFilter' : 'updatedDatePeriod');
+  const dateInput = $(isRegistration ? 'registrationDateFilter' : 'updatedDateFilter');
+  periodSelect.value = period;
+  dateInput.value = '';
+  $('dateFilterDialog').close();
+  renderRecords();
+}
+
+function applyExactDateFilter(dateValue) {
+  if (!dateValue) return;
+  const isRegistration = $('dateFilterDialog').dataset.filterType === 'registration';
+  const periodSelect = $(isRegistration ? 'datePeriodFilter' : 'updatedDatePeriod');
+  const dateInput = $(isRegistration ? 'registrationDateFilter' : 'updatedDateFilter');
+  periodSelect.value = 'ALL';
+  dateInput.value = dateValue;
+  $('dateFilterDialog').close();
+  renderRecords();
+}
+
+function applyBsDateFilter(dateValue) {
+  try {
+    const adDate = convertDateValue(dateValue.trim(), 'bs');
+    if (!adDate) throw new Error('Enter a valid Nepali date as YYYY-MM-DD.');
+    applyExactDateFilter(adDate);
+  } catch (error) {
+    showToast(error.message, true);
+  }
 }
 
 function visiblePendingRecords() {
@@ -1157,6 +1498,7 @@ function renderRecords() {
   const recordsBody = $('recordsBody');
   const pending = state.records.filter((record) => recordStatus(record) !== 'DONE');
   const filteredRecords = visibleRecords();
+  updateDateFilterCounts();
   const today = new Date();
   const registeredTodayCount = countRegistrationsForDate(
     state.records,
@@ -1260,16 +1602,19 @@ function renderRecords() {
   recordsBody.querySelectorAll('[data-delete]').forEach((button) => {
     button.addEventListener('click', () => {
       const record = state.records.find((item) => item._id === button.dataset.delete);
-      if (!record) return;
-      $('deleteRecordTitle').textContent = `Delete ${record.fullName}?`;
-      $('deleteRecordDescription').textContent = 'This permanently deletes the voter record and its associated history. Enter the admin password to continue.';
-      $('deleteRecordDialog').dataset.recordId = record._id;
-      $('deleteRecordPassword').value = '';
-      $('deleteRecordMessage').textContent = '';
-      $('deleteRecordDialog').showModal();
-      $('deleteRecordPassword').focus();
+      if (record) openRecordDeleteDialog(record);
     });
   });
+}
+
+function openRecordDeleteDialog(record) {
+  $('deleteRecordTitle').textContent = `Delete ${record.fullName}?`;
+  $('deleteRecordDescription').textContent = 'This permanently deletes the voter record and its associated history. Enter the admin password to continue.';
+  $('deleteRecordDialog').dataset.recordId = record._id;
+  $('deleteRecordPassword').value = '';
+  $('deleteRecordMessage').textContent = '';
+  $('deleteRecordDialog').showModal();
+  $('deleteRecordPassword').focus();
 }
 
 async function handleDeleteRecord(event) {
@@ -1292,6 +1637,7 @@ async function handleDeleteRecord(event) {
     state.recordsLoaded = true;
     cacheRecordsOrNotify();
     renderRecords();
+    if ($('registrationAnalyticsDialog').open) renderRegistrationAnalytics();
     dialog.close();
     showToast('Voter record and its history deleted.');
   } catch (error) {
@@ -1771,8 +2117,7 @@ function renderBatchResults() {
   });
 }
 
-function updateCheckAllDialog() {
-  const records = visiblePendingRecords();
+function updateCheckAllDialog(records = visiblePendingRecords(), title = 'Check unfinished records') {
   state.activeBatchResponseKey = ALL_BATCH_GROUP_KEY;
   state.batchResults = records.map((record) => ({
     record,
@@ -1780,7 +2125,7 @@ function updateCheckAllDialog() {
     error: '',
   }));
   $('checkAllTitle').classList.toggle('hidden', records.length === 0);
-  $('checkAllTitle').textContent = 'Check unfinished records';
+  $('checkAllTitle').textContent = title;
   $('checkAllProgress').max = records.length || 1;
   $('checkAllProgress').value = 0;
   $('checkAllProgress').classList.add('hidden');
@@ -1908,6 +2253,7 @@ async function runBatchChecks(records) {
   $('checkAllButton').title = 'Check all unfinished records';
   $('checkAllButton').removeAttribute('aria-busy');
   renderRecords();
+  renderBatchResults();
   if (remaining) {
     $('checkAllProgressText').textContent = `Stopped: ${checked} checked, ${failed} failed, ${remaining} remaining.`;
     if (!state.refreshingRecords) showToast(`Check all stopped: ${checked} checked, ${remaining} remaining.`);
@@ -2246,6 +2592,19 @@ async function initializeApp() {
   loadRecordColumnPreferences();
   renderRecordColumnSettings();
   loadCachedWorkspaceSettings();
+  const scrollTableRowsFromPageWhitespace = (event) => {
+    if (!event.deltaY || !document.querySelector('.content').classList.contains('records-view')) return;
+    if (event.target.closest('dialog[open], .table-scroll')) return;
+    event.preventDefault();
+    const tableScroll = document.querySelector('.table-scroll');
+    const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? event.deltaY * 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? event.deltaY * tableScroll.clientHeight
+        : event.deltaY;
+    tableScroll.scrollTop += delta;
+  };
+  document.addEventListener('wheel', scrollTableRowsFromPageWhitespace, { capture: true, passive: false });
   $('loginForm').addEventListener('submit', handleLogin);
   wireRecordEntryForm($('recordForm'), 'standard');
   wireRecordEntryForm($('oldRecordForm'), 'old');
@@ -2286,6 +2645,7 @@ async function initializeApp() {
     $('checkAllConcurrencyDialog').showModal();
   });
   $('workspacePasswordForm').addEventListener('submit', verifyWorkspaceAdminPassword);
+  $('settingsSignOutButton').addEventListener('click', () => void signOutFromSettings());
   $('recordColumnsOptions').addEventListener('click', saveColumnSettings);
   $('workspaceSettingsForm').addEventListener('submit', saveWorkspaceSettings);
   $('retrySettingsForm').addEventListener('submit', saveRetrySettings);
@@ -2540,11 +2900,53 @@ async function initializeApp() {
   $('multipleDeleteDialog').addEventListener('click', (event) => {
     if (event.target === $('multipleDeleteDialog')) $('multipleDeleteDialog').close();
   });
-  $('datePeriodFilter').addEventListener('change', renderRecords);
+  document.querySelectorAll('[data-date-filter]').forEach((button) => {
+    button.addEventListener('click', () => openDateFilterDialog(button.dataset.dateFilter));
+  });
+  $('dateFilterPeriodOptions').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-date-period]');
+    if (button) applyDateFilterPeriod(button.dataset.datePeriod);
+  });
+  $('toggleNepaliCalendar').addEventListener('click', () => {
+    const isExpanded = $('toggleNepaliCalendar').getAttribute('aria-expanded') === 'true';
+    $('toggleNepaliCalendar').setAttribute('aria-expanded', String(!isExpanded));
+    $('nepaliCalendar').classList.toggle('hidden', isExpanded);
+  });
+  $('previousNepaliMonth').addEventListener('click', () => shiftNepaliCalendarMonth(-1));
+  $('nextNepaliMonth').addEventListener('click', () => shiftNepaliCalendarMonth(1));
+  $('nepaliCalendarDays').addEventListener('click', (event) => {
+    const dayButton = event.target.closest('[data-nepali-date]');
+    if (dayButton) applyBsDateFilter(dayButton.dataset.nepaliDate);
+  });
+  $('dateFilterBsInput').addEventListener('input', (event) => {
+    if (!isValidBsDate(event.currentTarget.value.trim())) return;
+    const [year, month] = event.currentTarget.value.trim().split('-').map(Number);
+    $('nepaliCalendar').dataset.year = String(year);
+    $('nepaliCalendar').dataset.month = String(month);
+    try {
+      renderNepaliCalendar();
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+  $('dateFilterBsInput').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      applyBsDateFilter(event.currentTarget.value);
+    }
+  });
+  $('openRegistrationSort').addEventListener('click', () => openDateFilterDialog('sort'));
+  $('closeDateFilterDialog').addEventListener('click', () => $('dateFilterDialog').close());
+  $('dateFilterDialog').addEventListener('click', (event) => {
+    if (event.target === $('dateFilterDialog')) $('dateFilterDialog').close();
+  });
   $('registrationSort').addEventListener('change', renderRecords);
   $('clearFiltersButton').addEventListener('click', () => {
     $('recordsSearch').value = '';
     $('datePeriodFilter').value = 'ALL';
+    $('updatedDatePeriod').value = 'ALL';
+    $('registrationDateFilter').value = '';
+    $('updatedDateFilter').value = '';
     $('registrationSort').value = 'NEWEST';
     state.selectedStatusFilter = 'NOT DONE';
     renderRecords();
