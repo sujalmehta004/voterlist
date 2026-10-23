@@ -15,6 +15,7 @@ const workspaceSettingsApi = require('../api/workspace-settings');
 const recordsApi = require('../api/records');
 const checkStatusApi = require('../api/check-status');
 const publicRecordApi = require('../api/public-record');
+const verificationManifestApi = require('../api/verification-manifest');
 const voterSearchApi = require('../api/voter-search');
 
 function mockResponse() {
@@ -374,4 +375,27 @@ test('invalid public verification codes do not query MongoDB', async () => {
     headers: { host: 'localhost' },
   });
   assert.equal(response.statusCode, 404);
+});
+
+test('verification app manifest launches only the scanned QR record', async () => {
+  const code = 'a'.repeat(32);
+  const response = await invoke(verificationManifestApi, {
+    method: 'GET',
+    url: `/api/verification-manifest?code=${code}`,
+    headers: { host: 'localhost' },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.start_url, `/verify/${code}`);
+  assert.equal(response.body.scope, `/verify/${code}`);
+  assert.equal(response.body.id, `/verify/${code}`);
+  assert.equal(response.body.display, 'standalone');
+});
+
+test('verification app manifest rejects invalid QR codes', async () => {
+  const response = await invoke(verificationManifestApi, {
+    method: 'GET',
+    url: '/api/verification-manifest?code=invalid',
+    headers: { host: 'localhost' },
+  });
+  assert.equal(response.statusCode, 400);
 });

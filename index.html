@@ -21,7 +21,19 @@
   <meta name="twitter:description" content="Manage voter records, check registration status, and share QR-code verification." />
   <title>Voterlist System | International Digital Photo Studio</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="manifest" href="/manifest.webmanifest" />
+  <script>
+    (() => {
+      const routeCode = window.location.pathname.match(/^\/verify\/([A-Za-z0-9_-]{32})\/?$/)?.[1];
+      const queryCode = new URLSearchParams(window.location.search).get('verify');
+      const code = routeCode || (queryCode && /^[A-Za-z0-9_-]{32}$/.test(queryCode) ? queryCode : '');
+      const manifest = document.createElement('link');
+      manifest.rel = 'manifest';
+      manifest.href = code
+        ? `/api/verification-manifest?code=${encodeURIComponent(code)}`
+        : '/manifest.webmanifest';
+      document.head.append(manifest);
+    })();
+  </script>
   <link rel="stylesheet" href="/app.css" />
   <script type="application/ld+json">
     {
