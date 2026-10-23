@@ -2391,6 +2391,7 @@ async function runBatchChecks(records) {
   $('checkAllButton').setAttribute('aria-label', 'Check all unfinished records');
   $('checkAllButton').title = 'Check all unfinished records';
   $('checkAllButton').removeAttribute('aria-busy');
+  state.batchDialogReopenAvailable = false;
   renderRecords();
   renderBatchResults();
   if (remaining) {
@@ -2399,6 +2400,7 @@ async function runBatchChecks(records) {
   } else {
     showToast(`Check all complete: ${checked} checked, ${failed} failed.`, failed > 0);
   }
+  if (!$('checkAllDialog').open) $('checkAllDialog').showModal();
 }
 
 function verificationUrl(record) {
