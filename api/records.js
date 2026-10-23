@@ -14,9 +14,8 @@ const {
 } = require('../lib/records');
 
 module.exports = async function records(req, res) {
-  if (!hasValidSession(req)) return sendJson(res, 401, { error: 'Sign in to manage records.' });
-
   try {
+    if (!await hasValidSession(req, res)) return sendJson(res, 401, { error: 'Sign in to manage records.' });
     await connectToDatabase();
 
     if (req.method === 'GET') {

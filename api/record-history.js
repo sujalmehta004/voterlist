@@ -6,10 +6,9 @@ const { hasValidSession } = require('../lib/auth');
 const { sendJson } = require('../lib/http');
 
 module.exports = async function recordHistory(req, res) {
-  if (!hasValidSession(req)) return sendJson(res, 401, { error: 'Sign in to view record history.' });
-  if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
-
   try {
+    if (!await hasValidSession(req, res)) return sendJson(res, 401, { error: 'Sign in to view record history.' });
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed.' });
     const recordId = String(req.query?.recordId || '').trim();
     if (!mongoose.isValidObjectId(recordId)) {
       return sendJson(res, 400, { error: 'Select a valid voterlist record.' });

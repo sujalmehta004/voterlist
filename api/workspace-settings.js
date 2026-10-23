@@ -13,9 +13,8 @@ function getWorkspaceSettings(config) {
 }
 
 module.exports = async function workspaceSettings(req, res) {
-  if (!hasValidSession(req)) return sendJson(res, 401, { error: 'Sign in to manage workspace settings.' });
-
   try {
+    if (!await hasValidSession(req, res)) return sendJson(res, 401, { error: 'Sign in to manage workspace settings.' });
     if (!['GET', 'POST', 'PUT'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed.' });
 
     let body;

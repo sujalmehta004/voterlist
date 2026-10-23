@@ -115,7 +115,12 @@ module.exports = async (req, res) => {
 
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  if (!hasValidSession(req)) return res.status(401).json({ error: "Sign in to run a voter search." });
+  try {
+    if (!await hasValidSession(req, res)) return res.status(401).json({ error: "Sign in to run a voter search." });
+  } catch (error) {
+    console.error('Voter search authentication failed:', error.message);
+    return res.status(500).json({ error: "Authentication is temporarily unavailable." });
+  }
 
   const { nin, dob, firstname } = req.body || {};
   if (!nin || !dob || !firstname) {

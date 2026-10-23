@@ -81,7 +81,8 @@ async function handlePasswordChange(event) {
     });
     $('passwordForm').reset();
     $('passwordDialog').close();
-    showToast('Admin password updated in the database.');
+    $('loginMessage').textContent = 'Password updated. Sign in again with your new password.';
+    setScreen('loginScreen');
   } catch (error) {
     message.textContent = error.message;
   } finally {

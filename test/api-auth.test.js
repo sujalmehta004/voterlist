@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createSession, hasValidSession, setSessionCookie } = require('../lib/auth');
+const mongoose = require('mongoose');
+const {
+  createSession,
+  verifySessionToken,
+  hasValidSession,
+  setSessionCookie,
+} = require('../lib/auth');
+const Config = require('../lib/models/Config');
 const authApi = require('../api/auth');
 const workspaceSettingsApi = require('../api/workspace-settings');
 const recordsApi = require('../api/records');
@@ -33,14 +40,64 @@ async function invoke(handler, req) {
   return res;
 }
 
-test('signed admin session cookie is accepted only with its signature', () => {
+async function withSessionDatabase(callback, sessionVersion = 0) {
+  const previousMongoUri = process.env.MONGODB_URI;
+  const originalConnect = mongoose.connect;
+  const originalFindOne = Config.findOne;
+  const databaseCache = global.voterlistMongoose;
+  const previousConnection = databaseCache?.connection;
+  const previousPromise = databaseCache?.promise;
+  process.env.MONGODB_URI = 'mongodb://mocked.example/test';
+  if (databaseCache) {
+    databaseCache.connection = null;
+    databaseCache.promise = null;
+  }
+  mongoose.connect = async () => ({});
+  Config.findOne = () => ({
+    select() { return this; },
+    async lean() { return { sessionVersion }; },
+  });
+  try {
+    return await callback();
+  } finally {
+    mongoose.connect = originalConnect;
+    Config.findOne = originalFindOne;
+    if (databaseCache) {
+      databaseCache.connection = previousConnection;
+      databaseCache.promise = previousPromise;
+    }
+    if (previousMongoUri === undefined) delete process.env.MONGODB_URI;
+    else process.env.MONGODB_URI = previousMongoUri;
+  }
+}
+
+test('signed persistent admin session is accepted only with its signature and current password version', () => {
   process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
   const res = mockResponse();
-  setSessionCookie(res, createSession());
+  setSessionCookie(res, createSession(4));
+  assert.match(res.headers['Set-Cookie'], /Max-Age=34560000/);
   const cookie = res.headers['Set-Cookie'].split(';')[0];
-  assert.equal(hasValidSession({ headers: { cookie } }), true);
-  assert.equal(hasValidSession({ headers: { cookie: 'voterlist_session=invalid.payload' } }), false);
-  assert.equal(hasValidSession({ headers: {} }), false);
+  const request = { headers: { cookie } };
+  assert.equal(verifySessionToken(request, 4).sessionVersion, 4);
+  assert.equal(verifySessionToken(request, 5), null);
+  assert.equal(verifySessionToken({ headers: { cookie: 'voterlist_session=invalid.payload' } }), null);
+  assert.equal(verifySessionToken({ headers: {} }), null);
+});
+
+test('active sessions renew and password version changes revoke existing tokens', async () => {
+  process.env.VOTERLIST_SESSION_SECRET = 'test-secret-value-that-is-at-least-thirty-two-characters';
+  const originalResponse = mockResponse();
+  setSessionCookie(originalResponse, createSession(7));
+  const request = { headers: { cookie: originalResponse.headers['Set-Cookie'].split(';')[0] } };
+  const renewedResponse = mockResponse();
+
+  assert.equal(await withSessionDatabase(
+    () => hasValidSession(request, renewedResponse),
+    7,
+  ), true);
+  const renewedCookie = renewedResponse.headers['Set-Cookie'].split(';')[0];
+  assert.equal(verifySessionToken({ headers: { cookie: renewedCookie } }, 7).sessionVersion, 7);
+  assert.equal(await withSessionDatabase(() => hasValidSession(request), 8), false);
 });
 
 test('management APIs reject requests without an admin session', async () => {
@@ -66,24 +123,25 @@ test('workspace settings require valid visibility values and keep one tab visibl
   const cookieResponse = mockResponse();
   setSessionCookie(cookieResponse, createSession());
   const cookie = cookieResponse.headers['Set-Cookie'].split(';')[0];
-  const request = {
-    method: 'PUT',
-    url: '/api/workspace-settings',
-    headers: { cookie },
-    body: { hideEntryTab: true, hideOldEntryTab: true, hideDatabaseTab: true },
-  };
+  await withSessionDatabase(async () => {
+    const request = {
+      method: 'PUT',
+      url: '/api/workspace-settings',
+      headers: { cookie },
+      body: { hideEntryTab: true, hideOldEntryTab: true, hideDatabaseTab: true },
+    };
 
-  const bothHidden = await invoke(workspaceSettingsApi, request);
-  assert.equal(bothHidden.statusCode, 400);
-  assert.match(bothHidden.body.error, /at least one workspace tab/i);
+    const bothHidden = await invoke(workspaceSettingsApi, request);
+    assert.equal(bothHidden.statusCode, 400);
+    assert.match(bothHidden.body.error, /at least one workspace tab/i);
 
-  const invalidValues = await invoke(workspaceSettingsApi, {
-    ...request,
-    body: { hideEntryTab: 'true', hideOldEntryTab: false, hideDatabaseTab: false },
+    const invalidValues = await invoke(workspaceSettingsApi, {
+      ...request,
+      body: { hideEntryTab: 'true', hideOldEntryTab: false, hideDatabaseTab: false },
+    });
+    assert.equal(invalidValues.statusCode, 400);
+    assert.match(invalidValues.body.error, /choose whether to hide/i);
   });
-  assert.equal(invalidValues.statusCode, 400);
-  assert.match(invalidValues.body.error, /choose whether to hide/i);
-
 });
 
 test('workspace settings password verification requires a password', async () => {
@@ -91,12 +149,12 @@ test('workspace settings password verification requires a password', async () =>
   const cookieResponse = mockResponse();
   setSessionCookie(cookieResponse, createSession());
   const cookie = cookieResponse.headers['Set-Cookie'].split(';')[0];
-  const response = await invoke(workspaceSettingsApi, {
+  const response = await withSessionDatabase(() => invoke(workspaceSettingsApi, {
     method: 'POST',
     url: '/api/workspace-settings',
     headers: { cookie },
     body: {},
-  });
+  }));
 
   assert.equal(response.statusCode, 400);
   assert.match(response.body.error, /enter the admin password/i);
@@ -153,16 +211,18 @@ test('password changes require matching valid new-password fields', async () => 
     body: { currentPassword: 'current', newPassword: 'short', confirmPassword: 'short' },
   };
 
-  const shortPassword = await invoke(authApi, request);
-  assert.equal(shortPassword.statusCode, 400);
-  assert.match(shortPassword.body.error, /at least 8 characters/);
+  await withSessionDatabase(async () => {
+    const shortPassword = await invoke(authApi, request);
+    assert.equal(shortPassword.statusCode, 400);
+    assert.match(shortPassword.body.error, /at least 8 characters/);
 
-  const mismatch = await invoke(authApi, {
-    ...request,
-    body: { currentPassword: 'current', newPassword: 'long-enough', confirmPassword: 'different' },
+    const mismatch = await invoke(authApi, {
+      ...request,
+      body: { currentPassword: 'current', newPassword: 'long-enough', confirmPassword: 'different' },
+    });
+    assert.equal(mismatch.statusCode, 400);
+    assert.match(mismatch.body.error, /do not match/);
   });
-  assert.equal(mismatch.statusCode, 400);
-  assert.match(mismatch.body.error, /do not match/);
 });
 
 test('invalid public verification codes do not query MongoDB', async () => {

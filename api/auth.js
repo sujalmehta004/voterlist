@@ -6,14 +6,14 @@ const { readJsonBody, sendJson } = require('../lib/http');
 module.exports = async function auth(req, res) {
   try {
     if (req.method === 'GET') {
-      return sendJson(res, 200, { authenticated: hasValidSession(req) });
+      return sendJson(res, 200, { authenticated: await hasValidSession(req, res) });
     }
     if (req.method === 'DELETE') {
       clearSessionCookie(res);
       return sendJson(res, 200, { authenticated: false });
     }
     if (req.method === 'PUT') {
-      if (!hasValidSession(req)) return sendJson(res, 401, { error: 'Sign in to change the admin password.' });
+      if (!await hasValidSession(req, res)) return sendJson(res, 401, { error: 'Sign in to change the admin password.' });
       const body = await readJsonBody(req);
       const currentPassword = String(body.currentPassword || '');
       const newPassword = String(body.newPassword || '');
@@ -45,9 +45,10 @@ module.exports = async function auth(req, res) {
 
       await Config.updateOne(
         { key: 'default' },
-        { $set: { adminUnlockPassword: newPassword } },
+        { $set: { adminUnlockPassword: newPassword }, $inc: { sessionVersion: 1 } },
         { runValidators: true },
       );
+      clearSessionCookie(res);
       return sendJson(res, 200, { updated: true });
     }
     if (req.method !== 'POST') {
@@ -67,7 +68,7 @@ module.exports = async function auth(req, res) {
     }
 
     await connectToDatabase();
-    const config = await Config.findOne({ key: 'default' }).select('adminUnlockPassword').lean();
+    const config = await Config.findOne({ key: 'default' }).select('adminUnlockPassword sessionVersion').lean();
     const expectedPassword = String(
       config?.adminUnlockPassword || process.env.VOTERLIST_ADMIN_PASSWORD || ''
     );
@@ -78,7 +79,9 @@ module.exports = async function auth(req, res) {
     }
     if (password !== expectedPassword) return sendJson(res, 401, { error: 'Incorrect admin password.' });
 
-    setSessionCookie(res, createSession());
+    setSessionCookie(res, createSession(
+      Number.isSafeInteger(config?.sessionVersion) ? config.sessionVersion : 0,
+    ));
     return sendJson(res, 200, { authenticated: true });
   } catch (error) {
     console.error('Voterlist authentication failed:', error.message);

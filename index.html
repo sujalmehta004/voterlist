@@ -4,9 +4,37 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
-  <title>Voterlist System</title>
+  <meta name="description" content="International Digital Photo Studio's voterlist system for managing voter records, checking registration status, and sharing QR-code verification." />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <meta name="googlebot" content="index, follow" />
+  <meta name="keywords" content="International Digital Photo Studio, voterlist system, voter record management, voter registration status, voterlist verification" />
+  <link rel="canonical" href="https://voterlist.sujalmehta.com.np/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="International Digital Photo Studio" />
+  <meta property="og:title" content="Voterlist System | International Digital Photo Studio" />
+  <meta property="og:description" content="Manage voter records, check registration status, and share QR-code verification with International Digital Photo Studio's voterlist system." />
+  <meta property="og:url" content="https://voterlist.sujalmehta.com.np/" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Voterlist System | International Digital Photo Studio" />
+  <meta name="twitter:description" content="Manage voter records, check registration status, and share QR-code verification." />
+  <title>Voterlist System | International Digital Photo Studio</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/app.css" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Voterlist System",
+      "url": "https://voterlist.sujalmehta.com.np/",
+      "description": "A voter record management and registration status application by International Digital Photo Studio.",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "publisher": {
+        "@type": "Organization",
+        "name": "International Digital Photo Studio"
+      }
+    }
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/nepali-date-converter/dist/nepali-date-converter.umd.js" defer></script>
   <script src="/app.js" defer></script>
@@ -14,13 +42,23 @@
 <body>
   <main id="loginScreen" class="screen screen-center">
     <form id="loginForm" class="panel login-panel">
-      <div class="brand-mark">VS</div>
-      <p class="eyebrow">PRIVATE WORKSPACE</p>
-      <h1>Voterlist System</h1>
-      <p class="muted">Sign in with the administrator password to continue.</p>
-      <label for="loginPassword">Admin password</label>
-      <input id="loginPassword" name="password" type="password" autocomplete="current-password" required />
-      <button class="button primary full" type="submit">Sign in</button>
+      <div class="login-brand">
+        <div class="brand-mark" aria-hidden="true">ID</div>
+        <div>
+          <p class="login-studio-name">International Digital Photo Studio</p>
+          <p class="login-brand-caption">Voter services workspace</p>
+        </div>
+      </div>
+      <div class="login-heading">
+        <p class="eyebrow">ADMINISTRATOR ACCESS</p>
+        <h1>Voterlist System</h1>
+        <p class="muted">Sign in to manage voter records and registration status.</p>
+      </div>
+      <div class="login-credentials">
+        <label for="loginPassword">Admin password</label>
+        <input id="loginPassword" name="password" type="password" autocomplete="current-password" required />
+        <button class="button primary full" type="submit">Sign in securely</button>
+      </div>
       <p id="loginMessage" class="message" role="status"></p>
     </form>
   </main>

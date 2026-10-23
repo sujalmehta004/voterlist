@@ -36,10 +36,9 @@ function invokeVoterSearch(req, body) {
 }
 
 module.exports = async function checkStatus(req, res) {
-  if (!hasValidSession(req)) return sendJson(res, 401, { error: 'Sign in to check a record.' });
-  if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
-
   try {
+    if (!await hasValidSession(req, res)) return sendJson(res, 401, { error: 'Sign in to check a record.' });
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
     const body = await readJsonBody(req);
     const nin = normalizeNin(body.nin);
     const dobAd = String(body.dobAd || '').trim();
