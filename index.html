@@ -46,8 +46,8 @@
           <form id="recordForm" class="form-grid">
             <div class="field">
               <label for="nin">NID / NIN number <span class="required-mark" aria-hidden="true">*</span></label>
-              <input id="nin" name="nin" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="off"
-                placeholder="10 digits" required />
+              <input id="nin" name="nin" type="text" inputmode="numeric" maxlength="13" pattern="[0-9]{3}-[0-9]{3}-[0-9]{3}-[0-9]" autocomplete="off"
+                placeholder="123-456-789-0" required />
             </div>
             <div class="field">
               <label for="fullName">Full name <span class="required-mark" aria-hidden="true">*</span></label>
@@ -102,8 +102,8 @@
           <form id="oldRecordForm" class="form-grid">
             <div class="field">
               <label for="oldNin">NID / NIN number <span class="required-mark" aria-hidden="true">*</span></label>
-              <input id="oldNin" name="nin" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" autocomplete="off"
-                placeholder="10 digits" required />
+              <input id="oldNin" name="nin" type="text" inputmode="numeric" maxlength="13" pattern="[0-9]{3}-[0-9]{3}-[0-9]{3}-[0-9]" autocomplete="off"
+                placeholder="123-456-789-0" required />
             </div>
             <div class="field">
               <label for="oldFullName">Full name <span class="required-mark" aria-hidden="true">*</span></label>
@@ -148,41 +148,43 @@
       </section>
 
       <section id="tab-records" class="tab-panel hidden">
-        <div id="statusCounts" class="status-counts" role="group" aria-label="Filter records by status"></div>
         <div class="panel table-panel">
-          <div class="table-filters">
-            <div class="field">
-              <label for="recordsSearch">Search records</label>
-              <input id="recordsSearch" type="search" placeholder="Name, NIN, mobile, or number" />
-            </div>
-            <div class="field">
-              <label for="datePeriodFilter">Registration date</label>
-              <select id="datePeriodFilter">
-                <option value="ALL">Any date</option>
-                <option value="TODAY">Today</option>
-                <option value="YESTERDAY">Yesterday</option>
-                <option value="THIS_WEEK">This week</option>
-                <option value="THIS_MONTH">This month</option>
-                <option value="THIS_YEAR">This year</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="registrationSort">Sort by registered date</label>
-              <select id="registrationSort">
-                <option value="NEWEST">Newest first</option>
-                <option value="OLDEST">Oldest first</option>
-              </select>
-            </div>
-            <div class="table-filter-actions">
-              <button id="clearFiltersButton" class="button clear-filters icon-only-action" type="button" aria-label="Clear filters" title="Clear filters">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6.2 7.1V18l-3.6 1v-6.9L4 5Z"/><path d="m9 9 6 6m0-6-6 6"/></svg>
-              </button>
-              <button id="printMultipleButton" class="button toolbar-tool-action toolbar-icon-only print-tool-action" type="button" aria-label="Print multiple" title="Print multiple">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7zM17 11h.01"/></svg>
-              </button>
-              <button id="checkAllButton" class="button check-all-action toolbar-icon-only" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg>
-              </button>
+          <div class="records-sticky-controls">
+            <div id="statusCounts" class="status-counts" role="group" aria-label="Filter records by status"></div>
+            <div class="table-filters">
+              <div class="field">
+                <label for="recordsSearch">Search records</label>
+                <input id="recordsSearch" type="search" placeholder="Name, NIN, mobile, or number" />
+              </div>
+              <div class="field">
+                <label for="datePeriodFilter">Registration date</label>
+                <select id="datePeriodFilter">
+                  <option value="ALL">Any date</option>
+                  <option value="TODAY">Today</option>
+                  <option value="YESTERDAY">Yesterday</option>
+                  <option value="THIS_WEEK">This week</option>
+                  <option value="THIS_MONTH">This month</option>
+                  <option value="THIS_YEAR">This year</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="registrationSort">Sort by registered date</label>
+                <select id="registrationSort">
+                  <option value="NEWEST">Newest first</option>
+                  <option value="OLDEST">Oldest first</option>
+                </select>
+              </div>
+              <div class="table-filter-actions">
+                <button id="clearFiltersButton" class="button clear-filters icon-only-action" type="button" aria-label="Clear filters" title="Clear filters">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6.2 7.1V18l-3.6 1v-6.9L4 5Z"/><path d="m9 9 6 6m0-6-6 6"/></svg>
+                </button>
+                <button id="printMultipleButton" class="button toolbar-tool-action toolbar-icon-only print-tool-action" type="button" aria-label="Print multiple" title="Print multiple">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7zM17 11h.01"/></svg>
+                </button>
+                <button id="checkAllButton" class="button check-all-action toolbar-icon-only" type="button" aria-label="Check all unfinished records" title="Check all unfinished records">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.9 9a7 7 0 0 1 12-2L20 12M4 17v-5h5m10.1 3a7 7 0 0 1-12 2L4 12"/></svg>
+                </button>
+              </div>
             </div>
           </div>
           <div class="table-scroll">

@@ -49,6 +49,21 @@ function escapeHtml(value) {
   })[character]);
 }
 
+function formatNin(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+  return digits.match(/.{1,3}/g)?.join('-') || '';
+}
+
+function formatNinInput(input) {
+  const caret = input.selectionStart;
+  const digitsBeforeCaret = caret === null ? 0 : input.value.slice(0, caret).replace(/\D/g, '').length;
+  input.value = formatNin(input.value);
+  if (caret !== null) {
+    const position = digitsBeforeCaret + Math.floor(digitsBeforeCaret / 3);
+    input.setSelectionRange(position, position);
+  }
+}
+
 async function handlePasswordChange(event) {
   event.preventDefault();
   const button = $('savePasswordButton');
@@ -582,6 +597,7 @@ function setTab(tabName) {
       .find((name) => !document.querySelector(`.tab[data-tab="${name}"]`).hidden) || 'entry';
   }
   state.currentTab = tabName;
+  document.querySelector('.content').classList.toggle('records-view', tabName === 'records');
   document.querySelectorAll('.tab').forEach((button) => {
     button.classList.toggle('active', button.dataset.tab === tabName);
   });
@@ -939,7 +955,7 @@ function beginRecordEdit(record) {
   state.editingRecordId = record._id;
   const statusSelect = $('recordForm').elements.status;
   statusSelect.querySelector('option[value="DONE"]').hidden = false;
-  $('recordForm').elements.nin.value = String(record.nin || '').replace(/\D/g, '').slice(0, 10);
+  $('recordForm').elements.nin.value = formatNin(record.nin);
   $('recordForm').elements.fullName.value = record.fullName || '';
   $('recordForm').elements.dobAd.value = record.dobAd || '';
   $('recordForm').elements.dobBs.value = record.dobBs || '';
@@ -994,7 +1010,7 @@ function renderRecords() {
         <td data-record-column="name"><strong>${escapeHtml(record.fullName)}</strong></td>
         <td data-record-column="dob">${escapeHtml(record.dobAd)}</td>
         <td data-record-column="nin">${escapeHtml(record.nin)}</td>
-        <td data-record-column="mobile">${escapeHtml(record.mobile)}</td>
+        <td data-record-column="mobile" data-copy-mobile="${escapeHtml(record.mobile)}"><button class="mobile-copy-button" type="button" aria-label="Copy mobile number ${escapeHtml(record.mobile)}" title="Copy mobile number">${escapeHtml(record.mobile)}</button></td>
         <td data-record-column="status">${statusPill(recordStatus(record))}</td>
         <td data-record-column="number">${escapeHtml(recordNumber(record).value)}</td>
         <td data-record-column="registered">${escapeHtml(formatBsDate(record.createdAt))}</td>
@@ -1028,13 +1044,24 @@ function renderRecords() {
       if (record) openRecordDetails(record);
     };
     row.addEventListener('click', (event) => {
-      if (event.target.closest('button')) return;
+      if (event.target.closest('button, [data-record-column="mobile"], [data-record-column="actions"]')) return;
       showDetails();
     });
     row.addEventListener('keydown', (event) => {
+      if (event.target !== row) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         showDetails();
+      }
+    });
+  });
+  recordsBody.querySelectorAll('[data-copy-mobile]').forEach((cell) => {
+    cell.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(cell.dataset.copyMobile);
+        showToast('Mobile number copied.');
+      } catch {
+        showToast('Could not copy the mobile number. Check browser clipboard permissions.', true);
       }
     });
   });
@@ -1134,6 +1161,7 @@ async function handleCreateRecord(event, entryType = 'standard') {
   try {
     const payload = {
       ...Object.fromEntries(formData.entries()),
+      nin: enteredNin,
       status: form.elements.status.value,
       ...(entryType === 'old'
         ? {
@@ -1800,11 +1828,10 @@ async function showPublicVerification(code) {
 
 function wireRecordEntryForm(form, entryType) {
   form.addEventListener('submit', (event) => handleCreateRecord(event, entryType));
-  for (const field of ['nin', 'mobile']) {
-    form.elements[field].addEventListener('input', (event) => {
-      event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 10);
-    });
-  }
+  form.elements.nin.addEventListener('input', (event) => formatNinInput(event.currentTarget));
+  form.elements.mobile.addEventListener('input', (event) => {
+    event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 10);
+  });
   form.elements.fullName.addEventListener('input', (event) => {
     const input = event.currentTarget;
     const caret = input.selectionStart;
@@ -2059,8 +2086,11 @@ async function initializeApp() {
       event.preventDefault();
       const tabName = shortcutKey === 's' ? 'entry' : 'records';
       const focusId = shortcutKey === 's' ? 'nin' : 'recordsSearch';
+      const isCurrentTab = state.currentTab === tabName;
       setTab(tabName);
       $(focusId).focus();
+      if (!isCurrentTab) return;
+
       const reportFullscreenError = (error) => {
         console.error('Could not toggle fullscreen:', error);
         showToast('Fullscreen could not be changed. Use your browser fullscreen control.', true);
