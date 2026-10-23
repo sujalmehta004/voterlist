@@ -2605,6 +2605,20 @@ async function initializeApp() {
     tableScroll.scrollTop += delta;
   };
   document.addEventListener('wheel', scrollTableRowsFromPageWhitespace, { capture: true, passive: false });
+  document.addEventListener('keydown', (event) => {
+    const tableContent = document.querySelector('.content');
+    if (!tableContent.classList.contains('records-view') || event.altKey || event.ctrlKey || event.metaKey) return;
+    if ($('appScreen').classList.contains('hidden') || document.querySelector('dialog[open]')) return;
+    if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    const tableScroll = document.querySelector('.table-scroll');
+    const distance = 40;
+    if (event.key === 'ArrowDown') tableScroll.scrollTop += distance;
+    else if (event.key === 'ArrowUp') tableScroll.scrollTop -= distance;
+    else if (event.key === 'ArrowRight') tableScroll.scrollLeft += distance;
+    else if (event.key === 'ArrowLeft') tableScroll.scrollLeft -= distance;
+    else return;
+    event.preventDefault();
+  }, { capture: true });
   $('loginForm').addEventListener('submit', handleLogin);
   wireRecordEntryForm($('recordForm'), 'standard');
   wireRecordEntryForm($('oldRecordForm'), 'old');
