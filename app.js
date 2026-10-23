@@ -14,6 +14,7 @@ const state = {
   checkingAll: false,
   stopBatchRequested: false,
   batchRunPromise: null,
+  batchDialogReopenAvailable: false,
   statusCheckPromise: null,
   activeStatusChecks: new Map(),
   individualCheckResults: [],
@@ -29,6 +30,7 @@ const state = {
   batchResults: [],
   activeBatchResponseKey: '',
   registrationAnalyticsPeriod: '',
+  registrationAnalyticsBatch: null,
   deferredInstallPrompt: null,
   publicVerificationCode: '',
   publicRecordRequest: null,
@@ -995,6 +997,11 @@ function renderRegistrationAnalytics() {
   const selectedPeriod = allPeriods.find((period) => period.key === state.registrationAnalyticsPeriod);
   const selectedRecords = getRegistrationAnalyticsRecords(selectedPeriod);
   const selectedUndoneRecords = selectedRecords.filter((record) => recordStatus(record) !== 'DONE');
+  const selectedPeriodBatch = state.registrationAnalyticsBatch?.periodKey === selectedPeriod.key;
+  const checkingSelectedPeriod = selectedPeriodBatch && !state.registrationAnalyticsBatch.completed;
+  const checkingAllSelected = checkingSelectedPeriod && state.registrationAnalyticsBatch.scope === 'all';
+  const checkingUndoneSelected = checkingSelectedPeriod && state.registrationAnalyticsBatch.scope === 'undone';
+  const viewingCompletedBatch = selectedPeriodBatch && state.registrationAnalyticsBatch.completed;
   $('registrationAnalyticsContent').innerHTML = `
     <div class="registration-analytics-periods">
       ${periodGroups.map((group) => `
@@ -1007,7 +1014,8 @@ function renderRegistrationAnalytics() {
                 : period.type === 'month'
                   ? countRegistrationsForMonth(state.records, period.year, period.month)
                   : countRegistrationsForYear(state.records, period.year);
-              return `<button class="registration-analytics-row${period.key === selectedPeriod.key ? ' active' : ''}" type="button" data-registration-period="${escapeHtml(period.key)}" aria-pressed="${period.key === selectedPeriod.key}">
+              const isCheckingPeriod = state.registrationAnalyticsBatch?.periodKey === period.key;
+              return `<button class="registration-analytics-row${period.key === selectedPeriod.key ? ' active' : ''}${isCheckingPeriod ? ' is-checking' : ''}" type="button" data-registration-period="${escapeHtml(period.key)}" aria-pressed="${period.key === selectedPeriod.key}"${isCheckingPeriod ? ' aria-busy="true"' : ''}>
                 <span>${escapeHtml(period.label)}</span><span>${count}</span>
               </button>`;
             }).join('')}
@@ -1019,11 +1027,11 @@ function renderRegistrationAnalytics() {
       <div class="registration-analytics-records-heading">
         <h3>${escapeHtml(selectedPeriod.label)} registrations <span>${selectedRecords.length}</span></h3>
         <div class="registration-analytics-check-actions">
-          <button class="button primary" id="checkRegistrationPeriodButton" type="button" ${!selectedRecords.length || state.checkingAll ? 'disabled' : ''}>
-            ${state.checkingAll ? 'Check All is running…' : `Check all (${selectedRecords.length})`}
+          <button class="button primary registration-analytics-batch-action${checkingAllSelected ? ' is-checking' : ''}" id="checkRegistrationPeriodButton" type="button" ${!selectedRecords.length || state.checkingAll ? 'disabled' : ''}${checkingAllSelected ? ' aria-busy="true"' : ''}>
+            ${checkingAllSelected ? `Checking ${selectedRecords.length} records…` : viewingCompletedBatch && state.registrationAnalyticsBatch.scope === 'all' ? 'View check results' : `Check all (${selectedRecords.length})`}
           </button>
-          <button class="button subtle" id="checkUndoneRegistrationPeriodButton" type="button" ${!selectedUndoneRecords.length || state.checkingAll ? 'disabled' : ''}>
-            ${state.checkingAll ? 'Check All is running…' : `Check all undone (${selectedUndoneRecords.length})`}
+          <button class="button subtle registration-analytics-batch-action${checkingUndoneSelected ? ' is-checking' : ''}" id="checkUndoneRegistrationPeriodButton" type="button" ${!selectedUndoneRecords.length || state.checkingAll ? 'disabled' : ''}${checkingUndoneSelected ? ' aria-busy="true"' : ''}>
+            ${checkingUndoneSelected ? `Checking ${selectedUndoneRecords.length} unfinished…` : viewingCompletedBatch && state.registrationAnalyticsBatch.scope === 'undone' ? 'View check results' : `Check all undone (${selectedUndoneRecords.length})`}
           </button>
         </div>
       </div>
@@ -1038,7 +1046,7 @@ function renderRegistrationAnalytics() {
                 <td>${escapeHtml(record.mobile)}</td>
                 <td>${statusPill(recordStatus(record))}</td>
                 <td class="row-actions">
-                  <button class="button primary tiny" type="button" data-analytics-check="${escapeHtml(record._id)}" ${state.checkingAll || state.activeStatusChecks.has(record._id) ? 'disabled' : ''}>Check</button>
+                  <button class="button primary tiny analytics-check-action${state.activeStatusChecks.has(record._id) ? ' is-checking' : ''}" type="button" data-analytics-check="${escapeHtml(record._id)}" ${state.checkingAll || state.activeStatusChecks.has(record._id) ? 'disabled' : ''}${state.activeStatusChecks.has(record._id) ? ' aria-busy="true"' : ''}>${state.activeStatusChecks.has(record._id) ? 'Checking…' : 'Check'}</button>
                   <button class="button subtle tiny" type="button" data-analytics-print="${escapeHtml(record._id)}">Print</button>
                   ${state.workspaceSettings.hideRecordDeleteButton ? '' : `<button class="button tiny" type="button" data-analytics-delete="${escapeHtml(record._id)}">Delete</button>`}
                 </td>
@@ -1065,7 +1073,7 @@ function renderRegistrationAnalytics() {
     button.addEventListener('click', () => {
       const record = state.records.find((item) => item._id === button.dataset.analyticsCheck);
       if (record) {
-        void checkRecordStatus(record, null).finally(() => {
+        void checkRecordStatus(record, button, true).finally(() => {
           if ($('registrationAnalyticsDialog').open) renderRegistrationAnalytics();
         });
       }
@@ -1087,17 +1095,37 @@ function renderRegistrationAnalytics() {
 
 function startRegistrationPeriodChecks(records, period, recordScope = 'all') {
   if (state.checkingAll) {
+    if (state.registrationAnalyticsBatch?.periodKey === period.key
+      && state.registrationAnalyticsBatch.scope === recordScope) {
+      state.batchDialogReopenAvailable = false;
+      if (!$('checkAllDialog').open) $('checkAllDialog').showModal();
+      return;
+    }
     showToast('Wait for the current Check All run to finish.', true);
     return;
   }
+  if (state.registrationAnalyticsBatch?.periodKey === period.key
+    && state.registrationAnalyticsBatch.scope === recordScope
+    && state.registrationAnalyticsBatch.completed) {
+    state.batchDialogReopenAvailable = false;
+    if (!$('checkAllDialog').open) $('checkAllDialog').showModal();
+    return;
+  }
   if (!records.length) return;
+  const batchState = { periodKey: period.key, scope: recordScope, completed: false };
+  state.registrationAnalyticsBatch = batchState;
   const scopeLabel = recordScope === 'undone' ? 'unfinished registrations' : 'registrations';
   updateCheckAllDialog(records, `Check ${scopeLabel} for ${period.label}`);
+  renderRegistrationAnalytics();
   $('checkAllDialog').showModal();
   const batchPromise = runBatchChecks(records);
   state.batchRunPromise = batchPromise;
+  renderRegistrationAnalytics();
   void batchPromise.finally(() => {
     if (state.batchRunPromise === batchPromise) state.batchRunPromise = null;
+    if (state.registrationAnalyticsBatch === batchState) {
+      state.registrationAnalyticsBatch = { ...batchState, completed: true };
+    }
     if ($('registrationAnalyticsDialog').open) renderRegistrationAnalytics();
   });
 }
@@ -1956,7 +1984,7 @@ async function checkStatusWithRetries(
   throw new Error('Status check retry limit was reached unexpectedly.');
 }
 
-function checkRecordStatus(record, button) {
+function checkRecordStatus(record, button, openImmediately = false) {
   if (state.checkingAll) {
     showToast('Wait for Check All to finish before checking an individual record.', true);
     return Promise.resolve();
@@ -1984,7 +2012,7 @@ function checkRecordStatus(record, button) {
   state.individualCheckResults = state.individualCheckResults
     .filter((item) => item.record?._id !== record._id);
   state.individualCheckResults.push({ record, pending: true });
-  if ($('statusCheckResponseDialog').open) renderIndividualCheckResults();
+  if (openImmediately || $('statusCheckResponseDialog').open) renderIndividualCheckResults();
 
   let trackedPromise;
   trackedPromise = runRecordStatusCheck(record, button)
@@ -2015,7 +2043,7 @@ function checkRecordStatus(record, button) {
     });
   state.activeStatusChecks.set(record._id, trackedPromise);
   updateStatusCheckPromise();
-  if ($('statusCheckResponseDialog').open) renderIndividualCheckResults();
+  if (openImmediately || $('statusCheckResponseDialog').open) renderIndividualCheckResults();
   renderRecords();
   return trackedPromise;
 }
@@ -2120,6 +2148,11 @@ function batchResponseTone(response) {
   return 'default';
 }
 
+function isRetryableBatchResult(result) {
+  return recordStatus(result.record) !== 'DONE'
+    || batchResponseTone(result.response) === 'server-unavailable';
+}
+
 function batchResponseGroups() {
   const groups = new Map();
   for (const result of state.batchResults) {
@@ -2161,14 +2194,14 @@ function renderBatchResults() {
     state.activeBatchResponseKey = ALL_BATCH_GROUP_KEY;
   }
   const activeGroup = groups.find((group) => group.key === state.activeBatchResponseKey) || groups[0];
-  const retryable = activeGroup.records.filter((item) => recordStatus(item.record) !== 'DONE');
+  const retryable = activeGroup.records.filter(isRetryableBatchResult);
 
   container.innerHTML = `
     <div class="batch-group-toolbar">
       <div class="batch-response-tabs" role="tablist" aria-label="All records and unique server responses">
         ${groups.map((group, index) => {
           if (group.key === ALL_BATCH_GROUP_KEY) {
-            const allRetryableCount = group.records.filter((item) => recordStatus(item.record) !== 'DONE').length;
+            const allRetryableCount = group.records.filter(isRetryableBatchResult).length;
             return `<button class="batch-response-tab ${group.key === activeGroup.key ? 'active' : ''}" type="button" role="tab" aria-selected="${group.key === activeGroup.key}" data-response-group-index="${index}">
               <span>All records</span><small>${group.records.length} ${group.records.length === 1 ? 'record' : 'records'} · ${allRetryableCount} to retry</small>
             </button>`;
@@ -2178,7 +2211,7 @@ function renderBatchResults() {
             ? label.length > 42 ? `${label.slice(0, 39)}…` : label
             : 'No response message returned.';
           const tabLabel = `Response ${index} · ${responseLabel}`;
-          const groupRetryableCount = group.records.filter((item) => recordStatus(item.record) !== 'DONE').length;
+          const groupRetryableCount = group.records.filter(isRetryableBatchResult).length;
           return `<button class="batch-response-tab response-tone-${batchResponseTone(group.response)} ${group.key === activeGroup.key ? 'active' : ''}" type="button" role="tab" aria-selected="${group.key === activeGroup.key}" data-response-group-index="${index}" title="${escapeHtml(label || tabLabel)}">
             <span>${escapeHtml(tabLabel)}</span><small>${group.records.length} ${group.records.length === 1 ? 'record' : 'records'} · ${groupRetryableCount} to retry</small>
           </button>`;
@@ -2216,7 +2249,7 @@ function renderBatchResults() {
     const group = batchDisplayGroups()[Number(container.querySelector('[data-retry-response-group]').dataset.retryResponseGroup)];
     if (!group) return;
     const records = group.records
-      .filter((item) => recordStatus(item.record) !== 'DONE')
+      .filter(isRetryableBatchResult)
       .map((item) => item.record);
     void runBatchChecks(records);
   });
@@ -2242,6 +2275,7 @@ function updateCheckAllDialog(records = visiblePendingRecords(), title = 'Check 
 async function runBatchChecks(records) {
   if (!records.length || state.checkingAll) return;
   state.checkingAll = true;
+  state.batchDialogReopenAvailable = false;
   state.stopBatchRequested = false;
   $('checkAllButton').disabled = false;
   $('checkAllButton').classList.add('is-checking');
@@ -2364,9 +2398,6 @@ async function runBatchChecks(records) {
     if (!state.refreshingRecords) showToast(`Check all stopped: ${checked} checked, ${remaining} remaining.`);
   } else {
     showToast(`Check all complete: ${checked} checked, ${failed} failed.`, failed > 0);
-  }
-  if (!state.refreshingRecords && !$('checkAllDialog').open) {
-    $('checkAllDialog').showModal();
   }
 }
 
@@ -3386,10 +3417,14 @@ async function initializeApp() {
   });
   $('checkAllButton').addEventListener('click', async () => {
     animateToolbarAction($('checkAllButton'));
-    if (state.checkingAll) {
+    if (state.checkingAll || state.batchDialogReopenAvailable) {
       if (!$('checkAllDialog').open) {
+        state.batchDialogReopenAvailable = false;
         $('checkAllButton').classList.remove('is-backgrounded');
-        $('checkAllButton').setAttribute('aria-label', 'Check All is running; open progress');
+        $('checkAllButton').setAttribute(
+          'aria-label',
+          state.checkingAll ? 'Check All is running; open progress' : 'Open Check All results',
+        );
         $('checkAllDialog').showModal();
       }
       return;
@@ -3430,6 +3465,7 @@ async function initializeApp() {
   });
   $('checkAllDialog').addEventListener('close', () => {
     if (state.checkingAll) {
+      state.batchDialogReopenAvailable = true;
       $('checkAllButton').classList.add('is-backgrounded');
       $('checkAllButton').setAttribute('aria-label', 'Check All is running in the background; open progress');
     }

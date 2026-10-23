@@ -307,17 +307,20 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .status-count-label { color: #596d78; font-size: 12px; }
 .status-count-card strong { font-size: 22px; font-weight: 450; }
 .records-sticky-controls { flex: 0 0 auto; background: #fff; overscroll-behavior: none; }
-.check-dialog.registration-analytics-dialog { width: min(96vw, 1800px) !important; max-width: min(96vw, 1800px) !important; height: auto; max-height: 94vh; overflow: auto; }
-.registration-analytics-content { display: grid; gap: 18px; margin-top: 18px; }
+.check-dialog.registration-analytics-dialog { display: none; width: min(96vw, 1800px) !important; max-width: min(96vw, 1800px) !important; height: 92vh; height: 92dvh; max-height: 92vh; max-height: 92dvh; flex-direction: column; overflow: hidden; overscroll-behavior: none; }
+.check-dialog.registration-analytics-dialog[open] { display: flex; }
+.registration-analytics-dialog > .eyebrow, .registration-analytics-dialog > h2, .registration-analytics-dialog > .muted, .registration-analytics-dialog > .dialog-actions { flex: 0 0 auto; }
+.registration-analytics-dialog > .dialog-actions { margin-top: 10px; }
+.registration-analytics-content { display: grid; min-height: 0; flex: 1 1 auto; grid-template-rows: auto minmax(0, 1fr); gap: 12px; margin-top: 12px; overflow: hidden; }
 .registration-analytics-periods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.registration-analytics-section { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fbfdfd; }
+.registration-analytics-section { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fbfdfd; }
 .registration-analytics-section h3 { margin: 0 0 9px; color: #425969; font-size: 12px; font-weight: 450; }
-.registration-analytics-records { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fbfdfd; }
+.registration-analytics-records { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fbfdfd; overflow: hidden; }
 .registration-analytics-records-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .registration-analytics-check-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .registration-analytics-records-heading h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: #425969; font-size: 13px; font-weight: 450; }
 .registration-analytics-records-heading h3 span { padding: 2px 7px; border-radius: 999px; background: #eaf6f3; color: #175d56; font-size: 11px; }
-.registration-analytics-table-scroll { max-height: min(38vh, 420px); overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.registration-analytics-table-scroll { min-height: 0; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .registration-analytics-table { min-width: 760px; border-collapse: separate; border-spacing: 0; }
 .registration-analytics-table thead th { position: sticky; top: 0; z-index: 1; background: #f7fafa; box-shadow: 0 1px 0 #e9eff0; }
 .registration-analytics-table td { background: #fff; }
@@ -327,7 +330,10 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .registration-analytics-row span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .registration-analytics-row:hover, .registration-analytics-row:focus-visible { transform: translateY(-1px); border-color: #8bbcb5; outline: none; }
 .registration-analytics-row.active { border-color: #65a49b; background: #eaf6f3; color: #175d56; }
+.registration-analytics-row.is-checking { border-color: #83bf8e; background: #eef9ef; color: #245b32; animation: check-all-glow 1.6s ease-in-out infinite; }
 .registration-analytics-row span:last-child { min-width: 24px; color: var(--ink); text-align: right; }
+.registration-analytics-batch-action.is-checking, .analytics-check-action.is-checking { position: relative; padding-right: 34px; animation: check-all-glow 1.6s ease-in-out infinite; }
+.registration-analytics-batch-action.is-checking::after, .analytics-check-action.is-checking::after { position: absolute; top: 50%; right: 11px; width: 13px; height: 13px; margin-top: -8px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; content: ""; animation: check-spin .8s linear infinite; }
 .table-filters { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(190px, 1.2fr) minmax(170px, 1.1fr) minmax(160px, 1fr) auto; align-items: end; gap: 10px; margin: 0 0 14px; }
 .table-panel.filters-hidden .table-filters > .field,
 .table-panel.filters-hidden #clearFiltersButton { display: none; }
@@ -406,10 +412,18 @@ tr:last-child td { border-bottom: 0; }
   .check-record-action.is-checking, .check-record-action.is-checking::after,
   .check-record-action.is-checking svg, .toolbar-tool-action.is-activated,
   .toolbar-tool-action.is-working svg,
+  .registration-analytics-row.is-checking,
+  .registration-analytics-batch-action.is-checking,
+  .registration-analytics-batch-action.is-checking::after,
+  .analytics-check-action.is-checking,
+  .analytics-check-action.is-checking::after,
   .status-check-response-dialog [data-retry-check].is-retrying::after,
   .status-check-response-dialog #retryUnavailableChecksButton.is-retrying::after { animation: none; }
   .check-all-action.is-checking { box-shadow: 0 0 0 3px rgba(15, 118, 110, .18); }
   .check-all-action.is-checking::after { display: none; }
+  .registration-analytics-row.is-checking,
+  .registration-analytics-batch-action.is-checking,
+  .analytics-check-action.is-checking { box-shadow: 0 0 0 3px rgba(15, 118, 110, .14); }
   .status-count-card, .button, .toolbar-tool-label, .check-all-action .toolbar-tool-label,
   #saveRecordButton, #saveOldRecordButton { transition-duration: .01ms; }
 }
@@ -688,8 +702,23 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .status-count-icon { width: 29px; height: 29px; }
   .status-count-label { font-size: 10px; }
   .status-count-card strong { font-size: 19px; }
-  .check-dialog.registration-analytics-dialog { width: calc(100vw - 16px) !important; max-width: calc(100vw - 16px) !important; max-height: 96vh; padding: 18px 12px; }
-  .registration-analytics-periods { grid-template-columns: 1fr; }
+  .check-dialog.registration-analytics-dialog { width: calc(100vw - 16px) !important; max-width: calc(100vw - 16px) !important; height: 94vh; height: 94dvh; max-height: 94vh; max-height: 94dvh; padding: 14px 10px; }
+  .registration-analytics-dialog > .eyebrow { margin-bottom: 5px; }
+  .registration-analytics-dialog > h2 { margin: 0 0 4px; font-size: 17px; }
+  .registration-analytics-dialog > .muted { margin: 0; font-size: 10px; }
+  .registration-analytics-dialog > .dialog-actions { margin-top: 8px; }
+  .registration-analytics-content { gap: 7px; margin-top: 8px; }
+  .registration-analytics-periods { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+  .registration-analytics-section { padding: 6px; border-radius: 8px; }
+  .registration-analytics-section h3 { margin-bottom: 5px; font-size: 9px; line-height: 1.25; }
+  .registration-analytics-list { gap: 3px; }
+  .registration-analytics-row { gap: 3px; padding: 5px 4px; border-radius: 6px; font-size: 9px; line-height: 1.2; }
+  .registration-analytics-row span:last-child { min-width: 14px; }
+  .registration-analytics-records { padding: 7px; }
+  .registration-analytics-records-heading { align-items: flex-start; flex-direction: column; gap: 6px; margin-bottom: 7px; }
+  .registration-analytics-records-heading h3 { font-size: 11px; }
+  .registration-analytics-check-actions { justify-content: flex-start; gap: 5px; }
+  .registration-analytics-check-actions .button { min-height: 32px; padding: 7px 9px; font-size: 10px; }
   .table-filters { grid-template-columns: 1fr; }
   .date-filter-period-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .table-scroll { max-height: min(54vh, calc(100vh - 470px)); min-height: 180px; }
