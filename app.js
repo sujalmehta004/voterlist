@@ -1929,7 +1929,7 @@ async function handleCreateRecord(event, entryType = 'standard') {
     } else {
       $('savedRecordTitle').textContent = `${result.record.fullName} saved`;
       $('savedRecordDialog').showModal();
-      $('printSavedRecordButton').focus();
+      $(entryType === 'old' ? 'cancelSavedRecordButton' : 'printSavedRecordButton').focus();
     }
   } catch (error) {
     showToast(error.message, true);
@@ -3448,7 +3448,6 @@ async function initializeApp() {
     const record = state.savedRecord;
     $('savedRecordDialog').close();
     if (!record) return;
-    setTab('records');
     printRecord(record);
   });
   $('cancelSavedRecordButton').addEventListener('click', () => {
