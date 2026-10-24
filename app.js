@@ -6,8 +6,10 @@ const state = {
     hideOldEntryTab: false,
     hideDatabaseTab: false,
     hidePrintMultipleButton: false,
+    hideSinglePrintButton: false,
     hideDeleteMultipleButton: false,
     hideRecordDeleteButton: false,
+    hideVisitRecordQrLink: false,
     automaticStatusRetries: 3,
     checkAllConcurrency: 5,
   },
@@ -123,8 +125,10 @@ function isValidWorkspaceSettings(settings) {
     && typeof settings.hideOldEntryTab === 'boolean'
     && typeof settings.hideDatabaseTab === 'boolean'
     && typeof settings.hidePrintMultipleButton === 'boolean'
+    && typeof settings.hideSinglePrintButton === 'boolean'
     && typeof settings.hideDeleteMultipleButton === 'boolean'
     && typeof settings.hideRecordDeleteButton === 'boolean'
+    && typeof settings.hideVisitRecordQrLink === 'boolean'
     && Number.isInteger(settings.automaticStatusRetries)
     && settings.automaticStatusRetries >= 1
     && settings.automaticStatusRetries <= 15
@@ -141,8 +145,10 @@ function normalizeWorkspaceSettings(settings) {
     hideOldEntryTab: settings.hideOldEntryTab ?? false,
     hideDatabaseTab: settings.hideDatabaseTab,
     hidePrintMultipleButton: settings.hidePrintMultipleButton ?? false,
+    hideSinglePrintButton: settings.hideSinglePrintButton ?? false,
     hideDeleteMultipleButton: settings.hideDeleteMultipleButton ?? false,
     hideRecordDeleteButton: settings.hideRecordDeleteButton ?? false,
+    hideVisitRecordQrLink: settings.hideVisitRecordQrLink ?? false,
     automaticStatusRetries: settings.automaticStatusRetries ?? 3,
     checkAllConcurrency: settings.checkAllConcurrency ?? 5,
   };
@@ -153,11 +159,17 @@ function applyWorkspaceSettings() {
   $('hideEntryTab').checked = state.workspaceSettings.hideEntryTab;
   $('hideOldEntryTab').checked = state.workspaceSettings.hideOldEntryTab;
   $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
+  $('hideSinglePrintButton').checked = state.workspaceSettings.hideSinglePrintButton;
+  $('hideVisitRecordQrLink').checked = state.workspaceSettings.hideVisitRecordQrLink;
   document.querySelector('.tab[data-tab="entry"]').hidden = state.workspaceSettings.hideEntryTab;
   document.querySelector('.tab[data-tab="old-entry"]').hidden = state.workspaceSettings.hideOldEntryTab;
   document.querySelector('.tab[data-tab="records"]').hidden = state.workspaceSettings.hideDatabaseTab;
   $('printMultipleButton').classList.toggle('hidden', state.workspaceSettings.hidePrintMultipleButton);
+  document.querySelectorAll('.print-record-action').forEach((button) => {
+    button.classList.toggle('hidden', state.workspaceSettings.hideSinglePrintButton);
+  });
   $('deleteMultipleButton').classList.toggle('hidden', state.workspaceSettings.hideDeleteMultipleButton);
+  $('visitRecordQrButton').classList.toggle('hidden', state.workspaceSettings.hideVisitRecordQrLink);
   document.querySelectorAll('[data-delete]').forEach((button) => {
     button.classList.toggle('hidden', state.workspaceSettings.hideRecordDeleteButton);
   });
@@ -213,8 +225,10 @@ async function saveWorkspaceSettings(event) {
     hideOldEntryTab: $('hideOldEntryTab').checked,
     hideDatabaseTab: $('hideDatabaseTab').checked,
     hidePrintMultipleButton: $('hidePrintMultipleButton').checked,
+    hideSinglePrintButton: $('hideSinglePrintButton').checked,
     hideDeleteMultipleButton: $('hideDeleteMultipleButton').checked,
     hideRecordDeleteButton: $('hideRecordDeleteButton').checked,
+    hideVisitRecordQrLink: $('hideVisitRecordQrLink').checked,
     automaticStatusRetries: state.workspaceSettings.automaticStatusRetries,
     checkAllConcurrency: state.workspaceSettings.checkAllConcurrency,
   };
@@ -1601,11 +1615,10 @@ function resetRecordForm() {
   $('recordForm').reset();
   $('oldRecordForm').reset();
   $('status').value = 'NOT ONLINE';
-  $('oldStatus').value = 'NOT ONLINE';
   $('status').querySelector('option[value="DONE"]').hidden = true;
   $('recordForm').closest('.simple-form-panel').classList.remove('edit-mode');
   $('simpleFormTitle').textContent = 'New voter record';
-  $('saveRecordButton').textContent = 'Save voter record';
+  $('saveRecordButton').textContent = 'Save';
   $('cancelEditButton').classList.add('hidden');
   $('updateConfirmation').classList.add('hidden');
   $('updateConfirmText').value = '';
@@ -1689,6 +1702,9 @@ function renderRecords() {
     `).join('')
     : `<tr><td class="empty-row" colspan="${state.visibleRecordColumns.length}">${state.records.length ? 'No records match the current filters.' : 'No voterlist records saved yet.'}</td></tr>`;
 
+  recordsBody.querySelectorAll('.print-record-action').forEach((button) => {
+    button.classList.toggle('hidden', state.workspaceSettings.hideSinglePrintButton);
+  });
   applyRecordColumnVisibility();
   $('statusCounts').querySelectorAll('[data-status-filter]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -1872,7 +1888,7 @@ async function handleCreateRecord(event, entryType = 'standard') {
     const payload = {
       ...Object.fromEntries(formData.entries()),
       nin: enteredNin,
-      status: form.elements.status.value,
+      status: entryType === 'old' ? 'NOT ONLINE' : form.elements.status.value,
       ...(entryType === 'old'
         ? {
           entryType: 'old',
@@ -1899,7 +1915,7 @@ async function handleCreateRecord(event, entryType = 'standard') {
       resetRecordForm();
     } else {
       form.reset();
-      form.elements.status.value = 'NOT ONLINE';
+      if (entryType === 'standard') form.elements.status.value = 'NOT ONLINE';
       state.savedRecord = result.record;
       state.records = [result.record, ...state.records.filter((record) => record._id !== result.record._id)];
     }
@@ -1913,6 +1929,7 @@ async function handleCreateRecord(event, entryType = 'standard') {
     } else {
       $('savedRecordTitle').textContent = `${result.record.fullName} saved`;
       $('savedRecordDialog').showModal();
+      $('printSavedRecordButton').focus();
     }
   } catch (error) {
     showToast(error.message, true);
@@ -2464,9 +2481,17 @@ function printRecords(records) {
   }
   if (!records.length) return;
   const printSheet = $('printSheet');
-  printSheet.innerHTML = records.map((record, index) => `
-    <div class="print-page">${printCardMarkup(record, index)}</div>
-  `).join('');
+  const pages = [];
+  for (let index = 0; index < records.length; index += 3) {
+    pages.push(`
+      <div class="print-page">
+        ${printCardMarkup(records[index], index)}
+        ${records[index + 1] ? printCardMarkup(records[index + 1], index + 1) : ''}
+        ${records[index + 2] ? printCardMarkup(records[index + 2], index + 2) : ''}
+      </div>
+    `);
+  }
+  printSheet.innerHTML = pages.join('');
   records.forEach((record, index) => {
     const qrContainer = printSheet.querySelector(`[data-print-qr="${index}"]`);
     new window.QRCode(qrContainer, {
@@ -3092,8 +3117,10 @@ async function initializeApp() {
     $('hideOldEntryTab').checked = state.workspaceSettings.hideOldEntryTab;
     $('hideDatabaseTab').checked = state.workspaceSettings.hideDatabaseTab;
     $('hidePrintMultipleButton').checked = state.workspaceSettings.hidePrintMultipleButton;
+    $('hideSinglePrintButton').checked = state.workspaceSettings.hideSinglePrintButton;
     $('hideDeleteMultipleButton').checked = state.workspaceSettings.hideDeleteMultipleButton;
     $('hideRecordDeleteButton').checked = state.workspaceSettings.hideRecordDeleteButton;
+    $('hideVisitRecordQrLink').checked = state.workspaceSettings.hideVisitRecordQrLink;
     $('workspaceSettingsDialog').showModal();
   });
   $('openRetrySettingsButton').addEventListener('click', () => {
@@ -3150,7 +3177,10 @@ async function initializeApp() {
   $('registrationAnalyticsDialog').addEventListener('click', (event) => {
     if (event.target === $('registrationAnalyticsDialog')) $('registrationAnalyticsDialog').close();
   });
-  $('closeRecordDetailsButton').addEventListener('click', () => $('recordDetailsDialog').close());
+  $('printRecordDetailsButton').addEventListener('click', () => {
+    const record = state.records.find((item) => item._id === $('recordDetailsDialog').dataset.recordId);
+    if (record) printRecord(record);
+  });
   $('closeStatusCheckResponseButton').addEventListener('click', () => $('statusCheckResponseDialog').close());
   $('latestCheckResponseContent').addEventListener('click', (event) => {
     const retryButton = event.target.closest('[data-retry-check]');

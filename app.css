@@ -258,12 +258,21 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 }
 .floating-nav-row .toast { flex: 1 1 0; max-width: 600px; min-width: 0; max-height: calc(100vh - 24px); overflow: auto; margin: 0 auto 0 0; pointer-events: auto; }
 .content { width: 90vw; max-width: 1600px; margin: 70px auto; }
-.content.entry-view { display: flex; width: 95vw; max-width: none; height: calc(100vh - 86px); height: calc(100dvh - 86px); margin: 70px auto 16px; flex-direction: column; justify-content: center; overflow: hidden; overscroll-behavior: none; }
+.content.entry-view { display: flex; width: min(96vw, 1500px); max-width: none; height: calc(100vh - 86px); height: calc(100dvh - 86px); margin: 70px auto 16px; flex-direction: column; justify-content: center; overflow: hidden; overscroll-behavior: none; }
 .content.entry-view .tab-panel#tab-entry, .content.entry-view .tab-panel#tab-old-entry { display: grid; min-height: 0; height: 100%; place-items: center; overflow: hidden; }
-.content.entry-view .simple-form-panel { max-height: 100%; overflow: hidden; }
-.content.entry-view .form-grid { gap: 10px 16px; }
-.content.entry-view .simple-form-heading { margin-bottom: 12px; }
-.content.entry-view .field-wide textarea { height: 66px; min-height: 54px; }
+.content.entry-view .simple-form-panel { width: min(100%, 1120px); max-height: 100%; overflow: hidden; padding: clamp(24px, 3vw, 42px); border: 1px solid #dce8e8; border-radius: 20px; background: linear-gradient(145deg, #fff 55%, #f5faf9); box-shadow: 0 22px 60px rgba(23, 43, 58, .1); }
+.content.entry-view .form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 22px; }
+.content.entry-view .simple-form-heading { align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e7eeee; }
+.content.entry-view .simple-form-heading h2 { color: #173f43; font-size: 24px; letter-spacing: -.035em; }
+.content.entry-view .simple-form-heading .muted { padding: 7px 11px; border: 1px solid #d9eae5; border-radius: 999px; background: #f0f8f5; color: #477168; }
+.content.entry-view .form-grid .field label { margin-bottom: 7px; color: #39545e; font-size: 12px; font-weight: 500; }
+.content.entry-view .form-grid input, .content.entry-view .form-grid select { min-height: 46px; padding: 11px 13px; border-color: #cfdddf; border-radius: 11px; background-color: rgba(255, 255, 255, .94); }
+.content.entry-view .form-grid input:focus, .content.entry-view .form-grid select:focus, .content.entry-view .form-grid textarea:focus { border-color: #3c9c8d; box-shadow: 0 0 0 4px rgba(43, 154, 141, .12); }
+.content.entry-view .field-wide textarea { height: 72px; min-height: 64px; border-radius: 11px; }
+.content.entry-view .form-actions { min-height: 46px; justify-content: flex-end; gap: 10px; }
+.content.entry-view .form-actions .button { min-width: 150px; min-height: 44px; padding: 11px 20px; border-radius: 11px; font-size: 13px; font-weight: 550; }
+.content.entry-view .update-confirmation { flex: 1 1 auto; }
+.content.entry-view .update-confirmation input { min-height: 42px; }
 .content.records-view { display: flex; width: 95vw; max-width: none; height: calc(100vh - 86px); height: calc(100dvh - 86px); margin: 70px auto 16px; flex-direction: column; overflow: hidden; overscroll-behavior: none; }
 .content.records-view #tab-records { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .content.records-view #tab-records .table-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
@@ -285,7 +294,7 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .form-panel, .table-panel { padding: 24px; }
 .simple-form-panel { border-radius: 12px; box-shadow: none; }
 .tab-panel#tab-entry, .tab-panel#tab-old-entry { min-height: calc(100vh - 140px); display: grid; place-items: center; }
-.simple-form-panel { width: min(100%, 760px); }
+.simple-form-panel { width: min(100%, 1120px); }
 .simple-form-panel.edit-mode { border-color: #d97706; background: #fffbeb; box-shadow: 0 0 0 4px rgba(217, 119, 6, .13); }
 .simple-form-panel.edit-mode .simple-form-heading h2 { color: #9a4f06; }
 .simple-form-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
@@ -352,7 +361,7 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .table-panel.counts-hidden #statusCounts { display: none; }
 .table-filter-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .table-filter-actions .toolbar-icon-only { flex: 0 0 42px; }
-.table-filters .field label { min-height: 15px; white-space: nowrap; }
+.table-filters .field label { min-height: 15px; white-space: nowrap; font-size: 10px; }
 .table-filters input, .table-filters select { min-width: 0; padding: 9px 10px; font-size: 12px; }
 .table-filters .date-filter-field { display: grid; gap: 6px; }
 .table-filters .date-filter-field label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 0; }
@@ -766,8 +775,12 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   }
   .print-page {
     width: 190mm;
-    max-height: 118mm;
-    padding: 2mm;
+    height: 277mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 4mm;
+    padding: 0;
     box-sizing: border-box;
     break-inside: avoid;
     page-break-inside: avoid;

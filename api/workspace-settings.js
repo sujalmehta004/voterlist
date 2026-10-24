@@ -10,8 +10,10 @@ function getWorkspaceSettings(config) {
     hideOldEntryTab: Boolean(config?.hideOldEntryTab),
     hideDatabaseTab: Boolean(config?.hideDatabaseTab),
     hidePrintMultipleButton: Boolean(config?.hidePrintMultipleButton),
+    hideSinglePrintButton: Boolean(config?.hideSinglePrintButton),
     hideDeleteMultipleButton: Boolean(config?.hideDeleteMultipleButton),
     hideRecordDeleteButton: Boolean(config?.hideRecordDeleteButton),
+    hideVisitRecordQrLink: Boolean(config?.hideVisitRecordQrLink),
     automaticStatusRetries: Number.isInteger(config?.automaticStatusRetries)
       ? config.automaticStatusRetries
       : 3,
@@ -41,8 +43,10 @@ module.exports = async function workspaceSettings(req, res) {
         || typeof body.hideOldEntryTab !== 'boolean'
         || typeof body.hideDatabaseTab !== 'boolean'
         || typeof body.hidePrintMultipleButton !== 'boolean'
+        || typeof body.hideSinglePrintButton !== 'boolean'
         || typeof body.hideDeleteMultipleButton !== 'boolean'
         || typeof body.hideRecordDeleteButton !== 'boolean'
+        || typeof body.hideVisitRecordQrLink !== 'boolean'
         || !Number.isInteger(body.automaticStatusRetries)
         || body.automaticStatusRetries < 1
         || body.automaticStatusRetries > 15
@@ -89,8 +93,10 @@ module.exports = async function workspaceSettings(req, res) {
           hideOldEntryTab: body.hideOldEntryTab,
           hideDatabaseTab: body.hideDatabaseTab,
           hidePrintMultipleButton: body.hidePrintMultipleButton,
+          hideSinglePrintButton: body.hideSinglePrintButton,
           hideDeleteMultipleButton: body.hideDeleteMultipleButton,
           hideRecordDeleteButton: body.hideRecordDeleteButton,
+          hideVisitRecordQrLink: body.hideVisitRecordQrLink,
           automaticStatusRetries: body.automaticStatusRetries,
           checkAllConcurrency: body.checkAllConcurrency,
         },

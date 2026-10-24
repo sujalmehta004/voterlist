@@ -139,7 +139,7 @@
                 <label for="updateConfirmText">Type UPDATE to confirm changes</label>
                 <input id="updateConfirmText" type="text" autocomplete="off" />
               </div>
-              <button id="saveRecordButton" class="button primary" type="submit">Save voter record</button>
+              <button id="saveRecordButton" class="button primary" type="submit">Save</button>
               <button id="cancelEditButton" class="button subtle hidden" type="button">Cancel edit</button>
             </div>
           </form>
@@ -179,13 +179,6 @@
                 placeholder="10 digits" required />
             </div>
             <div class="field">
-              <label for="oldStatus">Status <span class="required-mark" aria-hidden="true">*</span></label>
-              <select id="oldStatus" name="status" required>
-                <option value="NOT ONLINE" selected>NOT ONLINE</option>
-                <option value="PENDING">PENDING</option>
-              </select>
-            </div>
-            <div class="field">
               <label for="registeredDate">Registered date (BS, English digits) <span class="required-mark" aria-hidden="true">*</span></label>
               <input id="registeredDate" name="registeredDate" type="text" inputmode="numeric" maxlength="10"
                 pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}" placeholder="YYYY-MM-DD" autocomplete="off" required />
@@ -195,7 +188,7 @@
               <textarea id="oldNotes" name="notes" rows="3" maxlength="2000" placeholder="Optional notes for this record"></textarea>
             </div>
             <div class="field-wide form-actions">
-              <button id="saveOldRecordButton" class="button primary" type="submit">Save old voter record</button>
+              <button id="saveOldRecordButton" class="button primary" type="submit">Save old record</button>
             </div>
           </form>
         </div>
@@ -454,10 +447,10 @@
       <div id="recordResponsesContent" class="response-list"><p class="muted small-text">Loading responses…</p></div>
     </section>
     <div class="dialog-actions">
+      <button id="printRecordDetailsButton" class="button subtle" type="button">Print A4</button>
       <button id="visitRecordQrButton" class="button subtle" type="button">Visit QR link</button>
       <button id="recordUpdatesButton" class="button subtle" type="button">Updates History</button>
       <button id="editRecordButton" class="button primary" type="button">Modify record</button>
-      <button id="closeRecordDetailsButton" class="button subtle" type="button">Close</button>
     </div>
   </dialog>
 
@@ -679,12 +672,20 @@
         <span>Hide Print multiple button</span>
       </label>
       <label class="workspace-setting-option">
+        <input id="hideSinglePrintButton" type="checkbox" />
+        <span>Hide Print button in each record row</span>
+      </label>
+      <label class="workspace-setting-option">
         <input id="hideDeleteMultipleButton" type="checkbox" />
         <span>Hide Delete multiple button</span>
       </label>
       <label class="workspace-setting-option">
         <input id="hideRecordDeleteButton" type="checkbox" />
         <span>Hide Delete button in each record row</span>
+      </label>
+      <label class="workspace-setting-option">
+        <input id="hideVisitRecordQrLink" type="checkbox" />
+        <span>Hide Visit QR link in record details</span>
       </label>
       <p id="workspaceSettingsMessage" class="message" role="status"></p>
       <div class="dialog-actions">
