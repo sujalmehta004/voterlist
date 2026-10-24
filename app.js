@@ -513,6 +513,10 @@ function setScreen(screen) {
   for (const id of ['loginScreen', 'appScreen', 'verifyScreen']) {
     $(id).classList.toggle('hidden', id !== screen);
   }
+  const lockPageScroll = screen === 'loginScreen'
+    || (screen === 'appScreen' && (state.currentTab === 'entry' || state.currentTab === 'old-entry'));
+  document.documentElement.classList.toggle('page-scroll-locked', lockPageScroll);
+  document.body.classList.toggle('page-scroll-locked', lockPageScroll);
 }
 
 function isInstalledAsApp() {
@@ -851,7 +855,11 @@ function setTab(tabName) {
       .find((name) => !document.querySelector(`.tab[data-tab="${name}"]`).hidden) || 'entry';
   }
   state.currentTab = tabName;
+  const lockPageScroll = tabName === 'entry' || tabName === 'old-entry';
+  document.documentElement.classList.toggle('page-scroll-locked', lockPageScroll);
+  document.body.classList.toggle('page-scroll-locked', lockPageScroll);
   document.querySelector('.content').classList.toggle('records-view', tabName === 'records');
+  document.querySelector('.content').classList.toggle('entry-view', tabName === 'entry' || tabName === 'old-entry');
   document.querySelectorAll('.tab').forEach((button) => {
     button.classList.toggle('active', button.dataset.tab === tabName);
   });

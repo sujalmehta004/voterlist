@@ -11,6 +11,7 @@
 }
 
 * { box-sizing: border-box; }
+html.page-scroll-locked, body.page-scroll-locked { width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
   margin: 0;
   background: var(--canvas);
@@ -25,6 +26,10 @@ strong, b { font-weight: 400; }
 .hidden { display: none !important; }
 .screen { min-height: 100vh; }
 .screen-center { display: grid; place-items: center; padding: 24px; }
+.page-scroll-locked .screen { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.page-scroll-locked #loginScreen { padding: 12px; }
+.page-scroll-locked #loginScreen .login-panel { max-height: 100%; }
+.page-scroll-locked #appScreen { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -253,6 +258,12 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 }
 .floating-nav-row .toast { flex: 1 1 0; max-width: 600px; min-width: 0; max-height: calc(100vh - 24px); overflow: auto; margin: 0 auto 0 0; pointer-events: auto; }
 .content { width: 90vw; max-width: 1600px; margin: 70px auto; }
+.content.entry-view { display: flex; width: 95vw; max-width: none; height: calc(100vh - 86px); height: calc(100dvh - 86px); margin: 70px auto 16px; flex-direction: column; justify-content: center; overflow: hidden; overscroll-behavior: none; }
+.content.entry-view .tab-panel#tab-entry, .content.entry-view .tab-panel#tab-old-entry { display: grid; min-height: 0; height: 100%; place-items: center; overflow: hidden; }
+.content.entry-view .simple-form-panel { max-height: 100%; overflow: hidden; }
+.content.entry-view .form-grid { gap: 10px 16px; }
+.content.entry-view .simple-form-heading { margin-bottom: 12px; }
+.content.entry-view .field-wide textarea { height: 66px; min-height: 54px; }
 .content.records-view { display: flex; width: 95vw; max-width: none; height: calc(100vh - 86px); height: calc(100dvh - 86px); margin: 70px auto 16px; flex-direction: column; overflow: hidden; overscroll-behavior: none; }
 .content.records-view #tab-records { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .content.records-view #tab-records .table-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
@@ -680,15 +691,23 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
   .floating-nav-row .toast { flex: 1 1 auto; }
   .floating-tabs { max-width: 72%; justify-content: flex-start; overflow-x: auto; }
   .content { width: 92vw; margin-top: 72px; }
-  .content.records-view { height: calc(100vh - 84px); height: calc(100dvh - 84px); margin: 72px auto 12px; }
+  .content.records-view, .content.entry-view { height: calc(100vh - 84px); height: calc(100dvh - 84px); margin: 72px auto 12px; }
   .tab { flex: 0 0 auto; justify-content: center; padding: 9px 8px; font-size: 11px; white-space: nowrap; }
   .form-panel, .table-panel { padding: 17px; }
   .form-grid, .verify-fields, .table-filters { grid-template-columns: 1fr; }
+  .content.entry-view .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
   .field-wide { grid-column: auto; }
-  .tab-panel#tab-entry, .tab-panel#tab-old-entry { min-height: calc(100vh - 100px); }
+  .content.entry-view .form-grid > .field-wide { grid-column: 1 / -1; }
+  .tab-panel#tab-entry, .tab-panel#tab-old-entry { min-height: 0; }
   .simple-form-panel { width: 100%; }
-  .simple-form-heading { align-items: flex-start; flex-direction: column; }
-  .form-actions { align-items: stretch; flex-direction: column; }
+  .content.entry-view .simple-form-panel { padding: 10px; }
+  .content.entry-view .simple-form-heading { align-items: flex-start; flex-direction: column; gap: 3px; margin-bottom: 7px; }
+  .content.entry-view .form-grid .field label { margin-bottom: 3px; font-size: 10px; line-height: 1.2; }
+  .content.entry-view .form-grid input, .content.entry-view .form-grid select { min-height: 34px; padding: 6px 8px; font-size: 11px; }
+  .content.entry-view .form-grid .field-wide textarea { height: 42px; min-height: 42px; padding: 6px 8px; }
+  .content.entry-view .form-actions { align-items: stretch; flex-direction: row; gap: 7px; }
+  .content.entry-view .form-actions .button { flex: 1 1 auto; min-height: 34px; padding: 7px 9px; font-size: 10px; }
+  .content.entry-view .simple-form-heading h2 { font-size: 15px; }
   .update-confirmation { width: 100%; }
   .record-modal-grid { grid-template-columns: 1fr; }
   .record-modal-grid .record-modal-wide { grid-column: auto; }
