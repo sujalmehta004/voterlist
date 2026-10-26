@@ -1018,7 +1018,9 @@ function renderRegistrationAnalytics() {
   }
   const selectedPeriod = allPeriods.find((period) => period.key === state.registrationAnalyticsPeriod);
   const selectedRecords = getRegistrationAnalyticsRecords(selectedPeriod);
-  const selectedUndoneRecords = selectedRecords.filter((record) => recordStatus(record) !== 'DONE');
+  const selectedUndoneRecords = selectedRecords.filter((record) => (
+    recordStatus(record) !== 'DONE' || isInProgressRecord(record)
+  ));
   const selectedPeriodBatch = state.registrationAnalyticsBatch?.periodKey === selectedPeriod.key;
   const checkingSelectedPeriod = selectedPeriodBatch && !state.registrationAnalyticsBatch.completed;
   const checkingAllSelected = checkingSelectedPeriod && state.registrationAnalyticsBatch.scope === 'all';
@@ -1053,7 +1055,7 @@ function renderRegistrationAnalytics() {
             ${checkingAllSelected ? `Checking ${selectedRecords.length} records…` : viewingCompletedBatch && state.registrationAnalyticsBatch.scope === 'all' ? 'View check results' : `Check all (${selectedRecords.length})`}
           </button>
           <button class="button subtle registration-analytics-batch-action${checkingUndoneSelected ? ' is-checking' : ''}" id="checkUndoneRegistrationPeriodButton" type="button" ${!selectedUndoneRecords.length || state.checkingAll ? 'disabled' : ''}${checkingUndoneSelected ? ' aria-busy="true"' : ''}>
-            ${checkingUndoneSelected ? `Checking ${selectedUndoneRecords.length} unfinished…` : viewingCompletedBatch && state.registrationAnalyticsBatch.scope === 'undone' ? 'View check results' : `Check all undone (${selectedUndoneRecords.length})`}
+            ${checkingUndoneSelected ? `Checking ${selectedUndoneRecords.length} incomplete…` : viewingCompletedBatch && state.registrationAnalyticsBatch.scope === 'undone' ? 'View check results' : `Check all incomplete (${selectedUndoneRecords.length})`}
           </button>
         </div>
       </div>
@@ -1136,7 +1138,7 @@ function startRegistrationPeriodChecks(records, period, recordScope = 'all') {
   if (!records.length) return;
   const batchState = { periodKey: period.key, scope: recordScope, completed: false };
   state.registrationAnalyticsBatch = batchState;
-  const scopeLabel = recordScope === 'undone' ? 'unfinished registrations' : 'registrations';
+  const scopeLabel = recordScope === 'undone' ? 'incomplete registrations' : 'registrations';
   updateCheckAllDialog(records, `Check ${scopeLabel} for ${period.label}`);
   renderRegistrationAnalytics();
   $('checkAllDialog').showModal();
@@ -1173,10 +1175,12 @@ function visibleRecords() {
   const updatedDate = $('updatedDateFilter').value;
   const records = state.records.filter((record) => {
     const status = recordStatus(record);
-    const matchesStatus = Boolean(search.trim())
-      || state.selectedStatusFilter === 'ALL'
-      || (state.selectedStatusFilter === 'NOT DONE' && status !== 'DONE')
-      || status === state.selectedStatusFilter;
+    const matchesStatus = state.selectedStatusFilter === 'IN PROGRESS'
+      ? isInProgressRecord(record)
+      : Boolean(search.trim())
+        || state.selectedStatusFilter === 'ALL'
+        || (state.selectedStatusFilter === 'NOT DONE' && status !== 'DONE')
+        || status === state.selectedStatusFilter;
     return matchesStatus
       && matchesRecordSearch(record, search)
       && matchesDatePeriod(record, datePeriod)
@@ -1203,10 +1207,12 @@ function updateDateFilterCounts() {
   const updatedDate = $('updatedDateFilter').value;
   const baseRecords = state.records.filter((record) => {
     const status = recordStatus(record);
-    const matchesStatus = Boolean(search.trim())
-      || state.selectedStatusFilter === 'ALL'
-      || (state.selectedStatusFilter === 'NOT DONE' && status !== 'DONE')
-      || status === state.selectedStatusFilter;
+    const matchesStatus = state.selectedStatusFilter === 'IN PROGRESS'
+      ? isInProgressRecord(record)
+      : Boolean(search.trim())
+        || state.selectedStatusFilter === 'ALL'
+        || (state.selectedStatusFilter === 'NOT DONE' && status !== 'DONE')
+        || status === state.selectedStatusFilter;
     return matchesStatus && matchesRecordSearch(record, search);
   });
   const registrationCount = baseRecords.filter((record) => (
@@ -1411,6 +1417,16 @@ function applyBsDateFilter(dateValue) {
 
 function visiblePendingRecords() {
   return state.records.filter((record) => recordStatus(record) !== 'DONE');
+}
+
+function checkEligibleRecords() {
+  return state.records.filter((record) => (
+    recordStatus(record) !== 'DONE' || isInProgressRecord(record)
+  ));
+}
+
+function isInProgressRecord(record) {
+  return recordNumber(record).label === 'Abedan number';
 }
 
 function renderRecordDetails(record) {
@@ -1650,7 +1666,8 @@ function beginRecordEdit(record) {
 
 function renderRecords() {
   const recordsBody = $('recordsBody');
-  const pending = state.records.filter((record) => recordStatus(record) !== 'DONE');
+  const pending = visiblePendingRecords();
+  const inProgress = state.records.filter(isInProgressRecord);
   const filteredRecords = visibleRecords();
   updateDateFilterCounts();
   const today = new Date();
@@ -1665,14 +1682,27 @@ function renderRecords() {
     { status: 'ALL', label: 'All records', symbol: '▤', count: state.records.length },
     { status: 'NOT ONLINE', label: 'Not online', symbol: '⊘', count: state.records.filter((record) => recordStatus(record) === 'NOT ONLINE').length },
     { status: 'PENDING', label: 'Pending', symbol: '◷', count: state.records.filter((record) => recordStatus(record) === 'PENDING').length },
-    { status: 'DONE', label: 'Done', symbol: '✓', count: state.records.filter((record) => recordStatus(record) === 'DONE').length },
+    { status: 'DONE_GROUP' },
     { status: 'NOT DONE', label: 'All not done', symbol: '↻', count: pending.length },
-  ].map((item) => `
-    <button class="status-count-card status-card-${item.status.toLowerCase().replace(/\s+/g, '-')}${state.selectedStatusFilter === item.status ? ' active' : ''}" type="button" data-status-filter="${escapeHtml(item.status)}" aria-pressed="${state.selectedStatusFilter === item.status}">
-      <span class="status-count-icon" aria-hidden="true">${item.symbol}</span>
-      <span class="status-count-label">${escapeHtml(item.label)}</span>
-      <strong>${item.count}</strong>
-    </button>
+  ].map((item) => item.status === 'DONE_GROUP' ? `
+    <div class="status-count-combined" role="group" aria-label="Done and in-progress records">
+      <button class="status-count-card status-card-done${state.selectedStatusFilter === 'DONE' ? ' active' : ''}" type="button" data-status-filter="DONE" aria-pressed="${state.selectedStatusFilter === 'DONE'}">
+        <span class="status-count-icon" aria-hidden="true">✓</span>
+        <span class="status-count-label">Done</span>
+        <strong>${state.records.filter((record) => recordStatus(record) === 'DONE').length}</strong>
+      </button>
+      <button class="status-count-card status-card-in-progress${state.selectedStatusFilter === 'IN PROGRESS' ? ' active' : ''}" type="button" data-status-filter="IN PROGRESS" aria-pressed="${state.selectedStatusFilter === 'IN PROGRESS'}">
+        <span class="status-count-icon" aria-hidden="true">◷</span>
+        <span class="status-count-label">In progress</span>
+        <strong>${inProgress.length}</strong>
+      </button>
+    </div>
+  ` : `
+      <button class="status-count-card status-card-${item.status.toLowerCase().replace(/\s+/g, '-')}${state.selectedStatusFilter === item.status ? ' active' : ''}" type="button" data-status-filter="${escapeHtml(item.status)}" aria-pressed="${state.selectedStatusFilter === item.status}">
+        <span class="status-count-icon" aria-hidden="true">${item.symbol}</span>
+        <span class="status-count-label">${escapeHtml(item.label)}</span>
+        <strong>${item.count}</strong>
+      </button>
   `).join('') + `
     <button class="status-count-card status-card-registered-today" type="button" data-registration-analytics aria-haspopup="dialog" aria-label="Show registration analytics; ${registeredTodayCount} registered today">
       <span class="status-count-icon" aria-hidden="true">＋</span>
@@ -1681,7 +1711,7 @@ function renderRecords() {
     </button>`;
   recordsBody.innerHTML = filteredRecords.length
     ? filteredRecords.map((record) => `
-      <tr class="record-row status-row-${recordStatus(record).toLowerCase().replace(/\s+/g, '-')}" data-record-row="${escapeHtml(record._id)}" tabindex="0" aria-label="View ${escapeHtml(record.fullName)} details">
+      <tr class="record-row status-row-${recordStatus(record).toLowerCase().replace(/\s+/g, '-')}${isInProgressRecord(record) ? ' status-row-in-progress' : ''}" data-record-row="${escapeHtml(record._id)}" tabindex="0" aria-label="View ${escapeHtml(record.fullName)} details">
         <td data-record-column="name"><strong>${escapeHtml(record.fullName)}</strong></td>
         <td data-record-column="dob">${escapeHtml(record.dobAd)}</td>
         <td data-record-column="nin">${escapeHtml(record.nin)}</td>
@@ -2175,6 +2205,7 @@ function batchResponseTone(response) {
 
 function isRetryableBatchResult(result) {
   return recordStatus(result.record) !== 'DONE'
+    || isInProgressRecord(result.record)
     || batchResponseTone(result.response) === 'server-unavailable';
 }
 
@@ -2207,7 +2238,7 @@ function renderBatchResults() {
     container.innerHTML = `
       <div class="batch-empty-state">
         <span aria-hidden="true">✓</span>
-        <div><strong>All caught up</strong><p>There are no unfinished records to check.</p></div>
+        <div><strong>All caught up</strong><p>There are no unfinished or in-progress records to check.</p></div>
       </div>`;
     state.activeBatchResponseKey = '';
     return;
@@ -2243,7 +2274,7 @@ function renderBatchResults() {
         }).join('')}
       </div>
       <button class="button primary batch-group-retry" type="button" data-retry-response-group="${groups.indexOf(activeGroup)}" ${state.checkingAll || !retryable.length ? 'disabled' : ''}>
-        ${state.checkingAll ? 'Checking…' : activeGroup.key === ALL_BATCH_GROUP_KEY ? `Retry all unfinished (${retryable.length})` : `Retry this group (${retryable.length})`}
+        ${state.checkingAll ? 'Checking…' : activeGroup.key === ALL_BATCH_GROUP_KEY ? `Retry all incomplete (${retryable.length})` : `Retry this group (${retryable.length})`}
       </button>
     </div>
     <div class="batch-table-scroll" role="tabpanel">
@@ -2251,7 +2282,7 @@ function renderBatchResults() {
         <thead><tr><th>Name</th><th>NIN</th><th>Server response</th><th>Status</th></tr></thead>
         <tbody>
           ${activeGroup.records.map((result) => `
-            <tr class="batch-record-row response-tone-${batchResponseTone(result.response)} status-row-${recordStatus(result.record).toLowerCase().replace(/\s+/g, '-')}">
+            <tr class="batch-record-row response-tone-${batchResponseTone(result.response)} status-row-${recordStatus(result.record).toLowerCase().replace(/\s+/g, '-')}${isInProgressRecord(result.record) ? ' status-row-in-progress' : ''}">
               <td><strong>${escapeHtml(result.record.fullName)}</strong></td>
               <td>${escapeHtml(result.record.nin)}</td>
               <td><p class="batch-row-response">${escapeHtml(batchResponseMessage(result.response ?? { message: result.error || 'Awaiting first check' }) || 'No response message returned.')}</p></td>
@@ -2280,7 +2311,7 @@ function renderBatchResults() {
   });
 }
 
-function updateCheckAllDialog(records = visiblePendingRecords(), title = 'Check unfinished records') {
+function updateCheckAllDialog(records = checkEligibleRecords(), title = 'Check incomplete records') {
   state.activeBatchResponseKey = ALL_BATCH_GROUP_KEY;
   state.batchResults = records.map((record) => ({
     record,
@@ -2305,8 +2336,8 @@ async function runBatchChecks(records) {
   $('checkAllButton').disabled = false;
   $('checkAllButton').classList.add('is-checking');
   $('checkAllButton').classList.remove('is-backgrounded');
-  $('checkAllButton').setAttribute('aria-label', 'Checking all unfinished records; click to view progress');
-  $('checkAllButton').title = 'Checking all unfinished records';
+  $('checkAllButton').setAttribute('aria-label', 'Checking all incomplete records; click to view progress');
+  $('checkAllButton').title = 'Checking all incomplete records';
   $('checkAllButton').setAttribute('aria-busy', 'true');
   $('checkAllProgress').max = records.length;
   $('checkAllProgress').value = 0;
@@ -2413,8 +2444,8 @@ async function runBatchChecks(records) {
   $('checkAllButton').disabled = false;
   $('checkAllButton').classList.remove('is-checking');
   $('checkAllButton').classList.remove('is-backgrounded');
-  $('checkAllButton').setAttribute('aria-label', 'Check all unfinished records');
-  $('checkAllButton').title = 'Check all unfinished records';
+  $('checkAllButton').setAttribute('aria-label', 'Check all incomplete records');
+  $('checkAllButton').title = 'Check all incomplete records';
   $('checkAllButton').removeAttribute('aria-busy');
   state.batchDialogReopenAvailable = false;
   renderRecords();
@@ -3482,7 +3513,7 @@ async function initializeApp() {
       updateCheckAllDialog();
       button.classList.remove('is-backgrounded');
       $('checkAllDialog').showModal();
-      const batchPromise = runBatchChecks(visiblePendingRecords());
+      const batchPromise = runBatchChecks(checkEligibleRecords());
       state.batchRunPromise = batchPromise;
       try {
         await batchPromise;
@@ -3493,8 +3524,8 @@ async function initializeApp() {
       if (!state.checkingAll) {
         button.disabled = false;
         button.classList.remove('is-checking');
-        button.setAttribute('aria-label', 'Check all unfinished records');
-        button.title = 'Check all unfinished records';
+        button.setAttribute('aria-label', 'Check all incomplete records');
+        button.title = 'Check all incomplete records';
         button.removeAttribute('aria-busy');
       }
     }

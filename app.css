@@ -314,15 +314,27 @@ input[readonly] { background: #f2f6f6; color: #586c76; }
 .status-done .status-symbol { color: #238450; }
 .status-label { color: #546975; background: #edf2f3; }
 .table-panel { margin-top: 0; }
-.status-counts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
+.status-counts { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; margin: 0 0 14px; }
 .status-count-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; min-height: 68px; padding: 12px 15px; border: 1px solid #e1e8e9; border-radius: 13px; background: #fff; color: var(--ink); text-align: left; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
 .status-count-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(23, 43, 58, .08); }
 .status-count-card.active { border-color: #6faaa3; box-shadow: 0 0 0 2px rgba(15, 118, 110, .13); }
+.status-count-combined { display: grid; grid-column: span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; overflow: hidden; border: 1px solid #e1e8e9; border-radius: 13px; background: #fff; }
+.status-count-combined .status-count-card { width: 100%; min-width: 0; border: 0; border-radius: 0; }
+.status-count-combined .status-count-card:hover { transform: none; }
 .status-card-not-online .status-count-icon { color: #66757d; background: #edf1f2; }
+.status-count-card.status-card-not-online:hover, .status-count-card.status-card-not-online:focus-visible { background: #f1f5f6; }
 .status-card-pending .status-count-icon { color: #a86b08; background: #fff2d2; }
+.status-count-card.status-card-pending:hover, .status-count-card.status-card-pending:focus-visible { background: #fff9e8; }
 .status-card-done .status-count-icon { color: #207748; background: #dcf5e4; }
+.status-count-card.status-card-done:hover, .status-count-card.status-card-done:focus-visible { background: #eff9f1; }
+.status-card-in-progress .status-count-icon { color: #c2410c; background: #ffedd5; }
+.status-count-combined .status-count-card.status-card-in-progress { border-left: 1px solid #fed7aa; background: #fff7ed; }
+.status-count-card.status-card-in-progress:hover, .status-count-card.status-card-in-progress:focus-visible { background: #ffedd5; }
+.status-count-combined .status-count-card.status-card-in-progress.active { box-shadow: inset 0 0 0 2px rgba(249, 115, 22, .18); }
 .status-card-not-done .status-count-icon { color: #315fc2; background: #e8efff; }
+.status-count-card.status-card-not-done:hover, .status-count-card.status-card-not-done:focus-visible { background: #f1f5ff; }
 .status-card-registered-today .status-count-icon { color: #087b91; background: #dff6fa; }
+.status-count-card.status-card-registered-today:hover, .status-count-card.status-card-registered-today:focus-visible { background: #effcff; }
 .status-count-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 17px; font-weight: 450; }
 .status-count-label { color: #596d78; font-size: 12px; }
 .status-count-card strong { font-size: 22px; font-weight: 450; }
@@ -416,6 +428,8 @@ tr:last-child td { border-bottom: 0; }
 .record-row:hover, .record-row:focus-visible { background: #f3f9f8; outline: none; }
 .record-row.status-row-done td { background: #eff9f1; }
 .record-row.status-row-done:hover td, .record-row.status-row-done:focus-visible td { background: #e4f4e8; }
+.record-row.status-row-in-progress td { background: #fff7ed; }
+.record-row.status-row-in-progress:hover td, .record-row.status-row-in-progress:focus-visible td { background: #ffedd5; }
 .record-row.status-row-pending td { background: #fffdf5; }
 .record-row.status-row-pending:hover td, .record-row.status-row-pending:focus-visible td { background: #fff9e8; }
 .record-row.status-row-not-online td { background: #fff; }
@@ -562,6 +576,9 @@ td .subline { display: block; margin-top: 3px; color: var(--muted); font-size: 1
 .batch-table tr:last-child td { border-bottom: 0; }
 .batch-record-row:hover td { background: #fafcff; }
 .batch-record-row.status-row-done td:first-child { border-left: 3px solid #35a675; }
+.batch-record-row.status-row-in-progress td:first-child { border-left: 3px solid #f97316; }
+.batch-record-row.status-row-in-progress td { background: #fff7ed; }
+.batch-record-row.status-row-in-progress:hover td { background: #ffedd5; }
 .batch-record-row.status-row-pending td:first-child { border-left: 3px solid #e5a63b; }
 .batch-record-row.status-row-not-online td:first-child { border-left: 3px solid #e07565; }
 .batch-record-row.response-tone-approved td { background: #edf8ef; }
